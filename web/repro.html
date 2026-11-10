@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121617">
+  <title>AI 复刻实验 · Video Remake</title>
+  <link rel="stylesheet" href="./repro.css">
+  <link rel="stylesheet" href="./navigation.css">
+  <script src="./repro.js" type="module"></script>
+</head>
+<body class="repro-page">
+  <a class="skip" href="#main">跳到工作台</a>
+  <aside class="app-sidebar" aria-label="工作区导航">
+    <a class="app-brand" href="./" aria-label="Video Remake 首页"><span class="app-brand-mark" aria-hidden="true">▶</span><span>video<span class="app-brand-light">remake</span><small>从参考到自己的作品。</small></span></a>
+    <nav class="app-navigation" aria-label="工作区导航">
+        <a class="app-nav-link" href="./references"><span class="app-nav-icon" aria-hidden="true">▤</span><span>参考视频<small>收集原片，选择制作参考</small></span></a>
+        <a class="app-nav-link" href="./"><span class="app-nav-icon" aria-hidden="true">▧</span><span>制作工作台<small>编辑模板，合成与查看成片</small></span></a>
+        <details class="app-advanced" open><summary>高级功能</summary><div class="app-advanced-menu"><a class="app-nav-link" href="./repro" aria-current="page"><span class="app-nav-icon" aria-hidden="true">↗</span><span>AI 复刻实验<small>自动复刻、评审与方法提炼</small></span></a></div></details>
+    </nav>
+    <div class="app-sidebar-note">AI 复刻实验<small>配置模型，运行任务，积累制作方法。</small></div>
+  </aside>
+  <main id="main" class="app-main" tabindex="-1">
+    <header class="topbar"><div class="breadcrumb">高级功能 <span>/</span> AI 复刻实验</div><span class="local">本地工作区</span></header>
+    <div class="repro-content">
+    <section class="intro"><div><p class="eyebrow">AI REMAKE LAB</p><h1>AI 复刻实验<span>.</span></h1><p class="muted">让模型自动复刻参考视频，评审结果，再提炼可复用的制作方法。</p><a class="app-return-link" href="./">编辑模板或查看成片，前往制作工作台 →</a></div><button id="refresh" class="secondary" type="button">↻ 刷新</button></section>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <section id="active-job" class="job card" hidden aria-label="当前后台任务"><div><span class="pulse"></span><strong id="job-title"></strong><p id="job-detail" class="muted"></p></div><button id="cancel-job" class="secondary" type="button">取消任务</button></section>
+    <div class="layout">
+      <aside class="settings card">
+        <p class="eyebrow">01 / EXECUTION</p><h2>模型与执行环境</h2><p class="muted">角色绑定现有 Agent 目标。每个目标包含模型和 Harness。</p>
+        <form id="workflow-form"><div id="roles"></div><label>制作流程<select id="execution-flow"><option value="staged">分阶段制作</option><option value="legacy">整片流程（历史兼容）</option></select></label><div id="stage-settings"><label>反馈方式<select id="feedback-mode"><option value="independent">独立制作：执行者自检与工具检查</option><option value="guided">有外部指导：单独记录协助</option></select></label><div class="two"><label>单阶段修复上限<input id="max-stage-revisions" type="number" min="1" max="20" value="2"></label><label>预览任务上限<input id="max-preview-jobs" type="number" min="1" value="48"></label></div><label>每位最终评审时限（分钟）<input id="reviewer-minutes" type="number" min="1" value="10"></label><p class="small muted">阶段检查只确认材料、来源及执行者自检，最终画面质量仍由双评审判断。</p></div><div class="two"><label>整片提交上限<input id="max-attempts" type="number" min="1" max="20" required></label><label>最大调用次数<input id="max-calls" type="number" min="1" required></label></div><label>总时间预算（分钟）<input id="max-minutes" type="number" min="1" max="1440" required></label><label>评审次数<select id="review-samples"><option value="2">双评审（方法生成必需）</option><option value="1">单次评审（历史流程）</option></select></label><label>渲染执行方<select id="render-provider"><option value="local">本机渲染器（推荐）</option><option value="agent">Harness 内渲染</option></select></label><p class="small muted">本机渲染器使用固定 HyperFrames 命令，适用于 Harness 环境无法启动浏览器的情况。</p><div class="actions"><button type="submit">保存默认配置</button><button id="doctor" class="secondary" type="button">检查环境</button></div></form>
+        <p id="config-note" class="small muted"></p><p class="small muted">配置用于新任务；已初始化任务保留冻结配置。技能原生发现与显式加载模式，以环境检查结果为准。</p>
+      </aside>
+      <div class="content">
+        <section class="card"><p class="eyebrow">02 / CREATE</p><div class="section-title"><h2>创建制作任务</h2><div class="tabs" role="group" aria-label="任务来源"><button id="mode-teacher" class="active" type="button" aria-pressed="true">从对标制作</button><button id="mode-method" type="button" aria-pressed="false">使用方法生成</button></div></div>
+          <form id="create-form"><label id="production-field">已有制作<select id="production" required><option value="">选择制作项目</option></select></label><div id="method-fields" hidden><div class="two"><label>方法配方<select id="method"><option value="">选择方法配方</option></select></label><label>新制作标识<input id="new-slug" placeholder="dashboard-new-brand" pattern="[a-zA-Z][a-zA-Z0-9_-]{0,63}"></label></div><label>参考视频<select id="reference"><option value="">选择参考视频</option></select></label><p class="small muted">只带入制作方法和通用素材。场景、布局和镜头由执行模型生成。</p></div>
+            <label id="spec-field">复刻规格 <span class="small muted">保留规则、替换范围和验收条件</span><textarea id="spec" rows="10" spellcheck="false" aria-label="复刻规格 JSON"></textarea></label>
+            <label>本次输入 <span class="small muted">JSON 对象；文件使用工作区内相对路径</span><textarea id="inputs" rows="4" spellcheck="false" aria-label="制作输入 JSON">{ "title": "新的标题" }</textarea></label><div class="actions"><button id="create-button" type="submit">初始化教师制作</button><span class="small muted">初始化后，在运行记录中启动模型。</span></div>
+          </form>
+        </section>
+        <section class="card"><p class="eyebrow">03 / RUN & REVIEW</p><div class="section-title"><h2>运行记录</h2><span id="run-count" class="pill">0</span></div><div id="runs" class="runs"><p class="muted">正在读取制作记录…</p></div></section>
+        <section class="card"><p class="eyebrow">04 / METHODS</p><div class="section-title"><h2>方法配方</h2><span id="method-count" class="pill">0</span></div><div id="methods" class="templates"></div><p class="small muted">配方保存制作方法、约束与修复流程；通用素材单独管理。验证结果只覆盖已测试的任务、模型与 Harness。</p><details><summary>历史工程模板 <span id="template-count"></span></summary><div id="templates" class="templates"></div><p class="small muted">历史版本和评审原样保留。工程回放不计为从空工程独立生成。</p></details></section>
+      </div>
+    </div>
+    <section id="detail" class="card detail" hidden aria-label="制作详情"><div class="section-title"><div><p class="eyebrow">EVIDENCE & DELIVERY</p><h2 id="detail-title"></h2></div><button id="close-detail" class="secondary" type="button">收起</button></div><div id="detail-summary" class="run-summary"></div><div id="detail-actions" class="actions"></div><div id="action-reasons" class="small muted"></div><section id="stage-area" class="stage-area" aria-label="制作阶段"><div class="section-title"><h3>制作阶段</h3><span id="stage-progress" class="pill"></span></div><p id="stage-note" class="small muted"></p><div id="stage-navigation" class="stage-navigation"></div><div id="stage-cards" class="stage-cards"></div></section><div id="review-summary" class="review-summary"></div><div id="comparison" class="comparison"></div><div id="evidence" class="evidence"></div><details><summary>技术检查与运行记录</summary><pre id="detail-json"></pre></details><details id="logs-box"><summary>最近 Agent 日志</summary><pre id="logs">选择制作后加载。</pre></details><form id="extract-form" class="extract-form"><h3>提炼方法配方</h3><div class="two"><label>配方名称<input id="extract-name" placeholder="dashboard" pattern="[a-z][a-z0-9_-]{0,63}" required></label><label>版本<input id="extract-version" type="number" min="1" value="1" required></label></div><button type="submit">从教师制作提炼方法</button></form><form id="revise-form" class="extract-form" hidden><h3>依据本次经验修订方法</h3><p class="small muted">创建方法草稿并保留反馈来源；已冻结方法和本次产物不变。新版本需从空工程重新验证。</p><div class="two"><label>配方名称<input id="revise-name" pattern="[a-z][a-z0-9_-]{0,63}" required></label><label>新版本<input id="revise-version" type="number" min="1" required></label></div><label>反馈记录（可多选）<select id="revise-feedback" multiple size="4" required></select></label><button type="submit">创建修订草稿</button></form><div id="publish-area" class="actions" hidden><button id="publish" type="button">发布该方法的验证记录</button></div></section>
+    <details class="card diagnostic"><summary>最近操作结果</summary><pre id="result">等待操作。</pre></details>
+    <footer>VIDEO REMAKE <span>对标 · 制作 · 提炼 · 验证 · 复用</span></footer>
+    </div>
+  </main>
+</body>
+</html>

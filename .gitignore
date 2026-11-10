@@ -1,0 +1,51 @@
+node_modules/
+video-remake.json
+agent-runtime.json
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local.json
+# Video files stay local, including mixed-case extensions.
+*.[mM][pP]4
+*.[mM][kK][vV]
+*.[wW][eE][bB][mM]
+*.[mM][oO][vV]
+*.[mM]4[vV]
+*.[aA][vV][iI]
+*.[mM][pP][eE][gG]
+*.[mM][pP][gG]
+*.[mM][tT][sS]
+*.[mM]2[tT][sS]
+*.[fF][lL][vV]
+*.[oO][gG][vV]
+*.3[gG][pP]
+*.m4a
+.DS_Store
+__pycache__/
+
+# Local reproduction execution bindings and generated instances
+reproduction-workflow.json
+reproduction-capabilities.local.json
+
+# Private workspace data stays local, including project source and metadata.
+/catalog.json
+/sources.json
+/productions/*
+!/productions/.gitkeep
+/references/*
+!/references/.gitkeep
+/deliverables/*
+!/deliverables/.gitkeep
+/assets/*
+!/assets/.gitkeep
+/reproductions/
+
+# Local validation results and screenshots (not generic documentation).
+/docs/reproduction-native-probes.json
+/docs/reproduction-validation.json
+/docs/shorts-v2-compare.png
+/docs/web-compare-preview.jpg
+/docs/web-preview.jpg
+
+/archive/

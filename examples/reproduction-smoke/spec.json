@@ -1,0 +1,86 @@
+{
+  "schema": "video-remake.reproduction@2",
+  "title": "仪表盘独立复刻项目流程测试",
+  "objective": "复现绑定原片完整约 19.13 秒的单画面工程仪表盘，以 HyperFrames 生成可编辑 HTML 和成片。按 inputs/values.json 替换品牌和四条标注。首轮测试只评估视觉，不保留或生成音轨。不读取既有 productions/demo-dashboard 制作源码或成片。",
+  "preserve": [
+    "480×600 的 4:5 画幅和约 19.13 秒时长。",
+    "单一仪表盘构图：网格、顶栏、中央粒子环、右侧读数、底部静态成本表。",
+    "四条标注按原片对应时间出现和撤回；粒子运动可重复 seek，不能使用累计随机状态。"
+  ],
+  "replace": [
+    "品牌使用 brand；四条标注分别使用 label1、label2、label3、label4，保持原有层级和入场次序。"
+  ],
+  "inputs": {
+    "brand": {
+      "type": "text",
+      "required": true
+    },
+    "label1": {
+      "type": "text",
+      "required": true
+    },
+    "label2": {
+      "type": "text",
+      "required": true
+    },
+    "label3": {
+      "type": "text",
+      "required": true
+    },
+    "label4": {
+      "type": "text",
+      "required": true
+    }
+  },
+  "acceptance": {
+    "media": {
+      "file": "outputs/final.mp4",
+      "width": 480,
+      "height": 600,
+      "durationSec": 19.13,
+      "toleranceSec": 0.2,
+      "audio": "forbidden"
+    },
+    "requiredFiles": [
+      "ANALYSIS.md",
+      "TIMELINE.md",
+      "src/index.html",
+      "RENDER.md"
+    ],
+    "review": [
+      {
+        "id": "layout",
+        "description": "比较开头、中段、结尾，主要区域比例、粒子环位置和信息层级符合原片构图。",
+        "modality": "visual"
+      },
+      {
+        "id": "timing",
+        "description": "比较四次标注出现及撤回的时间与顺序，保持原片节奏；无空白帧、跳变或闪烁。",
+        "modality": "visual"
+      },
+      {
+        "id": "replacement",
+        "description": "品牌和四条标注与 inputs/values.json 完全一致；文字可读、无遮挡和裁切。",
+        "modality": "visual"
+      },
+      {
+        "id": "motion",
+        "description": "比较多个对应时间点的粒子环与界面动效，符合原片运动特征；底部成本表保持静止。",
+        "modality": "visual"
+      }
+    ],
+    "evidence": {
+      "timestampsSec": [
+        0,
+        2,
+        4,
+        7,
+        10,
+        13,
+        16,
+        18.9
+      ]
+    }
+  },
+  "maxAttempts": 2
+}

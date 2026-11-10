@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "defaultTarget": "deepseek-flash",
+  "timeoutMs": 600000,
+  "targets": [
+    {
+      "name": "codex-native",
+      "enabled": false,
+      "harness": {
+        "adapter": "codex",
+        "executable": "codex",
+        "permission": "workspace-write"
+      },
+      "backend": {
+        "auth": "chatgpt",
+        "model": "gpt-6.1-sol"
+      }
+    },
+    {
+      "name": "claude-local",
+      "enabled": false,
+      "harness": {
+        "adapter": "claude-code",
+        "executable": "claude",
+        "permission": "workspace-write",
+        "contextMode": "project"
+      },
+      "backend": {
+        "auth": "claude-config",
+        "model": "configured"
+      }
+    },
+    {
+      "name": "deepseek-flash",
+      "enabled": false,
+      "harness": {
+        "adapter": "deepseek-harness",
+        "executable": "dsh",
+        "permission": "workspace-write",
+        "contextMode": "project"
+      },
+      "backend": {
+        "auth": "api-key",
+        "provider": "deepseek",
+        "protocol": "anthropic-messages",
+        "baseURL": "https://api.deepseek.com/anthropic",
+        "apiKeyEnv": "DEEPSEEK_API_KEY",
+        "model": "deepseek-flash"
+      }
+    },
+    {
+      "name": "codex-api",
+      "enabled": false,
+      "harness": {
+        "adapter": "codex",
+        "executable": "codex",
+        "permission": "workspace-write"
+      },
+      "backend": {
+        "auth": "api-key",
+        "provider": "openai",
+        "protocol": "responses",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "model": "gpt-6.1-sol"
+      }
+    }
+  ]
+}

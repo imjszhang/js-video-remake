@@ -1,0 +1,66 @@
+{
+  "schema": "video-remake.reproduction@2",
+  "title": "竖屏产品介绍：同结构内容替换",
+  "objective": "分析已绑定对标视频的前 12 秒，用 HyperFrames 复现镜头结构与动效节奏，按输入替换品牌和文案，生成可修改源码与成片。",
+  "preserve": [
+    "保留对标前 12 秒的镜头顺序、主要构图和信息层级。",
+    "保留转场类型、关键元素出入场顺序与节奏。"
+  ],
+  "replace": [
+    "将原品牌替换为 brand，标题替换为 headline，说明文案替换为 body。",
+    "若提供 logo，使用该图片；否则使用品牌文字。允许为新文案调整字号和换行，避免遮挡。"
+  ],
+  "inputs": {
+    "brand": {
+      "type": "text",
+      "required": true
+    },
+    "headline": {
+      "type": "text",
+      "required": true
+    },
+    "body": {
+      "type": "text",
+      "required": true
+    },
+    "logo": {
+      "type": "file",
+      "required": false
+    }
+  },
+  "acceptance": {
+    "media": {
+      "file": "outputs/final.mp4",
+      "width": 1080,
+      "height": 1920,
+      "durationSec": 12,
+      "toleranceSec": 0.5,
+      "audio": "optional"
+    },
+    "requiredFiles": [
+      "ANALYSIS.md",
+      "TIMELINE.md",
+      "composition/index.html",
+      "RENDER.md"
+    ],
+    "review": [
+      {
+        "id": "structure",
+        "description": "与对标前 12 秒并排观看，镜头顺序、主要构图和信息层级符合 preserve 要求。"
+      },
+      {
+        "id": "motion",
+        "description": "关键出入场、转场和节奏与对标对应，播放无闪烁、空白帧或意外跳变。"
+      },
+      {
+        "id": "replacement",
+        "description": "品牌、标题和正文与本次输入一致，未残留原品牌；新文案可读且没有裁切或遮挡。"
+      },
+      {
+        "id": "audio",
+        "description": "若含音轨，确认无意外静音、突变或明显音画错位；若不含音轨，记录无音轨并确认符合本次任务。"
+      }
+    ]
+  },
+  "maxAttempts": 2
+}

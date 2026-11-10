@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121617">
+  <title>制作工作台 · Video Remake</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c4f279'/%3E%3Cpath d='M12 8v16l13-8z' fill='%23121617'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./navigation.css">
+  <script src="./app.js" type="module"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到工作台</a>
+  <aside class="sidebar app-sidebar" aria-label="工作区与制作导航">
+    <a class="app-brand" href="./" aria-label="Video Remake 首页"><span class="app-brand-mark" aria-hidden="true">▶</span><span>video<span class="app-brand-light">remake</span><small>从参考到自己的作品。</small></span></a>
+    <nav class="app-navigation" aria-label="工作区导航">
+        <a class="app-nav-link" href="./references"><span class="app-nav-icon" aria-hidden="true">▤</span><span>参考视频<small>收集原片，选择制作参考</small></span></a>
+        <a class="app-nav-link" href="./" aria-current="page"><span class="app-nav-icon" aria-hidden="true">▧</span><span>制作工作台<small>编辑模板，合成与查看成片</small></span></a>
+        <details class="app-advanced"><summary>高级功能</summary><div class="app-advanced-menu"><a class="app-nav-link" href="./repro"><span class="app-nav-icon" aria-hidden="true">↗</span><span>AI 复刻实验<small>自动复刻、评审与方法提炼</small></span></a></div></details>
+    </nav>
+    <div class="nav-heading app-project-heading"><span>我的制作</span><span id="project-count">—</span></div>
+    <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索项目或视频" aria-label="搜索项目或视频" autocomplete="off"></label>
+    <div class="filters" role="group" aria-label="项目筛选"><button type="button" class="active" data-filter="all" aria-pressed="true">全部项目</button><button type="button" data-filter="playable" aria-pressed="false">可播放</button></div>
+    <nav id="projects" aria-label="项目列表"><p class="sidebar-message">正在读取项目…</p></nav>
+    <div class="sidebar-footer"><span class="live-dot"></span><span>本地工作区<small>VIDEO REMAKE / LIBRARY</small></span><button type="button" id="refresh" class="icon-button" aria-label="刷新项目库" title="刷新项目库">↻</button></div>
+  </aside>
+  <main id="main" class="app-main" tabindex="-1">
+    <header class="topbar"><div class="breadcrumb">制作工作台</div><span class="local-label"><span class="live-dot"></span> 本地工作区</span></header>
+    <div class="workspace">
+      <section class="intro"><div><p class="eyebrow">YOUR WORK, IN FRAME</p><h1>制作工作台<span class="heading-dot">.</span></h1><p class="intro-copy">选择已有制作继续编辑，或开始一个新制作。</p></div><div id="stats" class="stats" aria-label="媒体库统计"></div></section>
+      <section class="template-import" aria-labelledby="import-heading">
+          <div class="import-heading"><div><h2 id="import-heading">开始新制作</h2><p>选择参考视频，或导入已有的视频模板。</p></div><div class="import-entry-actions"><a class="download-link" href="./references">选择参考视频</a><button id="import-toggle" type="button" class="download-link" aria-expanded="false" aria-controls="import-form">＋ 导入模板</button></div></div>
+          <form id="import-form" hidden>
+              <label for="import-file">模板文件（.video） <input id="import-file" type="file" accept=".video" required aria-describedby="import-help"></label>
+              <label for="import-slug">制作标识（选填）<input id="import-slug" type="text" placeholder="例如 my-first-video" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="100" autocomplete="off" aria-describedby="import-help"></label>
+              <p id="import-help">文件不超过 100 MiB。制作标识使用小写字母、数字和连字符，留空使用模板默认名称；重复导入时换一个标识。</p>
+              <div class="import-actions"><button id="import-submit" type="submit" class="download-link">导入并创建项目</button><span id="import-status" role="status" aria-live="polite"></span></div>
+          </form>
+      </section>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <div id="loading" class="loading"><span class="live-dot"></span> 正在加载本地作品</div>
+      <section id="project-view" hidden aria-label="当前项目">
+        <div class="project-header"><div><p id="project-kicker" class="eyebrow"></p><h2 id="project-title"></h2></div><span id="project-status" class="status-badge"></span></div>
+
+        <div class="workspace-tabs" role="tablist" aria-label="项目工作区">
+          <button type="button" id="template-tab" role="tab" aria-selected="true" aria-controls="template-workspace" data-workspace="template">模板工作台 <span id="template-tab-count"></span></button>
+          <button type="button" id="playback-tab" role="tab" aria-selected="false" aria-controls="playback-workspace" data-workspace="playback" tabindex="-1">成片放映 <span id="playback-tab-count"></span></button>
+        </div>
+        <section id="template-workspace" role="tabpanel" aria-labelledby="template-tab">
+        <section id="template-editor" class="template-editor" hidden aria-label="模板制作工作台"></section>
+          <details id="template-archive" class="template-archive"><summary>全部模板包 <span>下载与分享 · .video 文件</span></summary></details>
+        </section>
+        <section id="playback-workspace" role="tabpanel" aria-labelledby="playback-tab" hidden>
+          <div class="playback-heading"><div><p class="eyebrow">SCREENING ROOM</p><h3>已合成的视频</h3><p id="playback-context">这里播放已合成的视频，模板截图在工作台查看。</p></div><button type="button" id="back-to-template" class="editor-secondary">返回模板工作台 →</button></div>
+        <div id="version-controls" class="version-controls" hidden><label for="draft-version">播放版本 <select id="draft-version" aria-label="复刻版本" aria-describedby="version-note"></select></label><p id="version-note" aria-live="polite"></p><div id="version-detail" class="version-detail" hidden></div></div>
+        <div id="screening" class="screening">
+          <section class="watch" aria-label="视频播放器">
+            <div class="view-toolbar"><div class="view-switch" role="group" aria-label="观看模式"><button type="button" data-view="remake" aria-pressed="true">复刻版</button><button type="button" data-view="original" aria-pressed="false">原版</button><button type="button" data-view="compare" aria-pressed="false">并排对比</button><button type="button" data-view="versions" aria-pressed="false">版本对比</button></div><label id="compare-version-control" class="compare-version" hidden>对比 <select id="compare-version" aria-label="对比的版本"></select></label><span id="reference-unavailable" hidden>这条视频的原片暂不可用</span></div>
+            <div id="viewer">
+              <div class="video-pair">
+                <section id="original-frame" class="video-frame" hidden aria-label="原版画面"><div class="frame-heading"><span id="original-frame-label">原版 <small>ORIGINAL</small></span><span id="original-frame-meta"></span></div><div class="video-stage"><video id="original-player" controls playsinline preload="metadata" aria-label="原版视频"></video><div id="original-error" class="media-error" role="alert" hidden>原片暂时无法播放。请刷新后重试。</div></div><p id="original-title" class="frame-title"></p></section>
+                <section id="remake-frame" class="video-frame" aria-label="复刻画面"><div class="frame-heading"><span id="remake-frame-label">复刻版 <small>REMAKE</small></span><span id="remake-frame-meta"></span></div><div class="video-stage"><video id="player" controls playsinline preload="metadata" aria-label="当前视频"></video><div id="playback-error" class="media-error" role="alert" hidden>视频暂时无法播放。请刷新项目库后重试。</div></div><p id="remake-title" class="frame-title"></p></section>
+              </div>
+              <div id="compare-controls" class="compare-controls" hidden>
+                <div class="shared-transport"><button type="button" id="compare-play" class="compare-play" disabled>▶ 一起播放</button><button type="button" id="compare-restart" class="icon-button" aria-label="从头对比" title="从头对比">↺</button><span id="compare-time">0:00 / 0:00</span><input id="compare-seek" type="range" min="0" max="0" value="0" step="0.01" aria-label="对比播放进度" disabled></div>
+                <div class="compare-options"><span id="sync-status" role="status">正在读取两段视频…</span><div><label>声音 <select id="compare-audio" aria-label="对比声音来源"><option value="original">原版</option><option value="remake">复刻版</option><option value="none">静音</option></select></label><label>速度 <select id="compare-rate" aria-label="对比播放速度"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label><button type="button" id="compare-fullscreen" class="icon-button" aria-label="全屏对比" title="全屏对比">⛶</button></div></div>
+                <p class="compare-note">按相同时间对齐 · 时长较短的视频结束后保留尾帧</p>
+                <p id="compare-error" role="alert" hidden></p>
+              </div>
+            </div>
+            <div class="now-playing"><div><p id="video-kicker" class="eyebrow"></p><h3 id="video-title"></h3></div><div class="transport"><button type="button" id="previous" class="icon-button" aria-label="上一条视频" title="上一条视频">←</button><span id="position"></span><button type="button" id="next" class="icon-button" aria-label="下一条视频" title="下一条视频">→</button></div></div>
+            <dl id="metadata" class="metadata"></dl>
+            <p id="draft-note" class="draft-note" hidden><span>◌</span> 画面审阅版 · 当前视频没有音轨。</p>
+            <div class="resources"><a id="download" class="download-link" download>↓ 下载复刻版</a><a id="original-download" download hidden>↓ 下载原片</a><a id="contact-sheet" target="_blank" rel="noopener">查看分镜图 ↗</a><a id="reference" target="_blank" rel="noopener noreferrer">原片来源 ↗</a></div>
+          </section>
+          <aside class="playlist-panel" aria-label="播放列表"><div class="playlist-heading"><h3>播放列表</h3><span id="playlist-count"></span></div><div id="playlist" class="playlist"></div><label class="autoplay"><input id="auto-next" type="checkbox"> 连续播放下一条</label></aside>
+        </div>
+        <div id="empty-project" class="empty-project" hidden><span class="empty-icon">▷</span><h3>这个项目还在制作中</h3><p>登记成片或审阅草稿后，会自动出现在这里。</p></div>
+        </section>
+        <section id="templates" class="templates" hidden aria-labelledby="templates-heading"><div class="templates-heading"><h3 id="templates-heading">.video 模板</h3><span id="templates-count"></span></div><p class="templates-note">.video 是可再次导入和修改的模板包。要下载可播放的视频，请先合成，再前往成片放映。</p><div id="template-list" class="template-list"></div></section>
+      </section>
+      <footer class="workspace-footer"><span>VIDEO REMAKE</span><span>项目 · 草稿 · 成片</span></footer>
+    </div>
+  </main>
+</body>
+</html>

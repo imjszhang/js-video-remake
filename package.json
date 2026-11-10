@@ -1,0 +1,43 @@
+{
+  "name": "video-remake",
+  "version": "0.1.0",
+  "description": "对标视频复刻工作台：管理本地参考视频，生成独立复刻项目模板并验证 Agent 执行",
+  "author": "imjszhang",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "bin": {
+    "remake": "cli/remake.js"
+  },
+  "scripts": {
+    "start": "node cli/web.js",
+    "remake": "node cli/remake.js",
+    "test": "node --test test/*.test.js",
+    "agent:config": "node cli/remake.js agent:config",
+    "agent:doctor": "node cli/remake.js agent:doctor",
+    "agent:plan": "node cli/remake.js agent:plan",
+    "agent:run": "node cli/remake.js agent:run",
+    "agent:status": "node cli/remake.js agent:status",
+    "agent:logs": "node cli/remake.js agent:logs",
+    "agent:cancel": "node cli/remake.js agent:cancel",
+    "agent:test": "node --test test/agent*.test.js",
+    "repro:test": "node --test test/repro-*.test.js",
+    "repro:doctor": "node cli/remake.js repro:doctor"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/noto-sans-sc": "5.3.1",
+    "hyperframes": "0.8.191",
+    "js-agent-runtime": "0.2.2"
+  },
+  "overrides": {
+    "@modelcontextprotocol/client@2.2.0": "2.3.0",
+    "fflate@0.8.2": "0.8.3",
+    "undici@8.11.2": "8.12.2",
+    "zod@4.4.3": "4.6.7"
+  }
+}

@@ -1,0 +1,63 @@
+# 制作工作台与部署
+
+[返回项目说明](../README.md)
+
+## 启动与导航
+
+在项目根目录运行 `npm start` 后打开 [http://127.0.0.1:8786/](http://127.0.0.1:8786/)。无需单独安装或构建前端，启动工作台也不要求素材网关在线。如已配置反向代理，可使用自己的代理地址。
+
+左侧的日常入口分为「参考视频」和「制作工作台」：前者管理参考原片，后者管理自己的制作。在制作工作台的「我的制作」中选择项目，再使用项目内部的「模板工作台」修改模板、准备素材，或进入「成片放映」查看已合成的视频。
+
+「高级功能」可展开进入「AI 复刻实验」（`./repro`），用于配置模型自动复刻、运行评审和提炼方法配方。日常创建制作、修改模板和播放成片无需进入实验页，详见[方法配方与独立制作](reproduction.md#web-入口ai-复刻实验)。
+
+## 参考与播放
+
+导航中的「参考视频」默认展示本地参考清单（网页相对路径 `./references`），通过「添加参考」按需打开导入窗口：可搜索或筛选可用原片、导入本地文件或 manifest、扫描文件夹后勾选导入、从链接下载，并从可用参考创建制作。路径填写运行 Web 服务的设备上的路径；这里登记原片引用，不上传或复制已有原片。链接下载在后台执行，页面显示任务状态和失败原因。详细操作见[网页管理参考视频](local-references.md#网页管理参考视频)。
+
+页面按项目展示当前草稿、正式成片和版本对比，支持搜索、分集切换、连续播放、进度拖动、下载、分镜图及原片来源链接。画面保持原比例；制作中且无成片的项目会显示空状态。
+
+有原片时默认进入 **并排对比**，也可以切换为 **复刻版** 或 **原版** 单独播放。左侧原版、右侧复刻共用播放、暂停、进度和倍速控制；声音可选原版、复刻版或静音。两段按相同秒数对齐，不拉伸时长；较短视频结束后保留尾帧，直到较长视频结束。窄屏会改为上下排列。切换分集或项目会停止上一组播放。原片缺失时仍可播放复刻版。
+
+## 台账与媒体读取
+
+界面直接读取 `catalog.json` 的 `productions`，不用另建数据库。尚未创建台账或项目列表为空时显示「暂无项目」，不会报读取错误，也不会创建台账文件。更新台账后点击页面左下角刷新：
+
+- `deliverable` 指向当前交付目录和文件。
+- `comparison` 指向当前对比目录和文件。
+- `drafts` 指向审阅目录，`MANIFEST.json` 的 `renders` 数组列出每条视频；可记录 `episode`、`title`、`file`、`duration`、`width`、`height`、`audioStreams`。海报和分镜图支持 `poster` / `contactSheet` 相对路径，或约定的 `01-poster.jpg` / `review/01-contact-sheet.jpg`。
+
+目前展示台账指向的最新版本；历史文件继续保留在磁盘。HTTP 服务只提供登记的视频、海报、分镜图及绑定的原片，不开放整个工作区或原片库。
+
+原片只读播放，不复制文件。通过本地文件、manifest、扫描和下载入口导入的原片按登记的具体文件放行；旧网关或 `bind` 原片从配置的 `assetRoot`（或 `REMAKE_ASSET_ROOT` / `VIDEO_REMAKE_ASSET_ROOT`）读取，并检查目录边界，不开放整个原片目录。每条输出通过 `render.referenceId`（必须属于项目的 `referenceIds`），或分集序号匹配 `referenceIds`；单参考项目直接匹配唯一参考。
+
+## 服务配置
+
+```bash
+npm start
+# http://127.0.0.1:8786/
+```
+
+可通过 `REMAKE_HOST`、`REMAKE_PORT`、`REMAKE_ROOT` 指定监听地址、端口和工作区。默认只监听回环地址。API 为 `GET /api/health`、`GET /api/projects`；媒体支持 `GET`、`HEAD`、单段 Range 请求。
+
+接入反向代理时剥离 `/remake` 前缀，前端使用相对 URL。
+
+## macOS 常驻运行
+
+macOS 可用用户级 LaunchAgent：以稳定的 Node 可执行路径运行项目的 `cli/web.js`，指定工作目录及包含 Node、npm、FFmpeg 的 `PATH`，启用 `RunAtLoad` 和 `KeepAlive`。配置保存在本机 `~/Library/LaunchAgents/`，日志放在 `~/Library/Logs/`，不提交本机路径或凭据。
+
+它在登录后自动启动，服务退出后自动恢复；关闭浏览器或终端不影响运行。睡眠期间服务暂停，注销或关机后停止；服务恢复不代表未完成的生成任务可以续跑。
+
+本机服务标签可用 `com.jszhang.video-remake`：
+
+```bash
+# 检查状态
+launchctl print gui/$(id -u)/com.jszhang.video-remake
+
+# 更新代码后重启；先确认没有生成任务运行
+launchctl kickstart -k gui/$(id -u)/com.jszhang.video-remake
+
+# 停止并取消本次登录的自动恢复
+launchctl bootout gui/$(id -u)/com.jszhang.video-remake
+```
+
+要永久取消自动启动，再移走对应 LaunchAgent 配置。移动项目或 Node 路径后需更新本机配置。

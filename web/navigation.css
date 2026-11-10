@@ -1,0 +1,122 @@
+/* 三个页面共享全局入口；项目列表与项目内操作各自独立。 */
+.app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 2;
+    width: 256px;
+    display: flex;
+    flex-direction: column;
+    padding: 30px 18px 18px;
+    background: #191d1e;
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+}
+.sidebar.app-sidebar { width: 256px; padding: 30px 18px 18px; }
+.app-main.app-main { margin-left: 256px; }
+.app-brand {
+    display: flex;
+    align-items: flex-start;
+    flex-shrink: 0;
+    gap: 10px;
+    margin: 0 7px 30px;
+    font-size: 21px;
+    font-weight: 750;
+    letter-spacing: -.8px;
+    line-height: 1.5;
+}
+.app-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin-top: 2px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: #1b2415;
+    font-size: 16px;
+    padding-left: 2px;
+}
+.app-brand-light { font-weight: 400; color: #c5cdcc; }
+.app-brand small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: 0; }
+.app-navigation { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.app-navigation .app-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #c1cac7;
+    font-size: 13px;
+    font-weight: 550;
+    line-height: 1.5;
+}
+.app-navigation .app-nav-link small { display: block; margin-top: 4px; font-size: 10px; font-weight: 400; color: #8d9b94; }
+.app-navigation .app-nav-icon { flex: none; font-size: 18px; font-weight: 400; }
+.app-navigation .app-nav-link:hover { background: #252e29; color: var(--text); }
+.app-navigation .app-nav-link[aria-current=page] { background: #2c3828; border-color: #45583c; color: var(--accent); }
+.app-navigation .app-nav-link[aria-current=page] small { color: #a4b59a; }
+.app-navigation #nav-reference-count { margin-left: auto; color: #a4b59a; font-size: 11px; }
+.app-navigation .app-advanced { margin: 9px 0 0; padding-top: 10px; border-top: 1px solid #303833; }
+.app-advanced > summary { padding: 8px 10px; color: #8e9b94; font-size: 11px; cursor: pointer; list-style: none; }
+.app-advanced > summary::-webkit-details-marker { display: none; }
+.app-advanced > summary::after { content: '＋'; float: right; margin-left: 10px; }
+.app-advanced[open] > summary::after { content: '−'; }
+.app-advanced > summary:hover { color: var(--text); }
+.app-advanced > summary:focus-visible, .app-brand:focus-visible, .app-nav-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.app-advanced-menu { padding-top: 4px; }
+.app-project-heading.nav-heading { display: flex; flex-shrink: 0; margin: 22px 0 14px; padding: 18px 10px 0; border-top: 1px solid var(--line); letter-spacing: .5px; }
+.app-sidebar > .search, .app-sidebar > .filters, .app-sidebar > .sidebar-footer { flex-shrink: 0; }
+.app-sidebar > #projects { min-height: 90px; }
+.app-sidebar-note { margin-top: auto; padding: 20px 9px 6px; border-top: 1px solid var(--line); font-size: 12px; color: #bfcac4; }
+.app-sidebar-note small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted); }
+.repro-page .app-main { max-width: none; min-height: 100vh; padding: 0; }
+.repro-page .topbar { height: 76px; padding: 0 36px; justify-content: space-between; }
+.repro-page .breadcrumb { color: #b5bdbd; font-size: 12px; }
+.repro-page .breadcrumb span { margin: 0 12px; color: #607063; }
+.repro-content { max-width: 1440px; margin: auto; padding: 38px 36px 25px; }
+.repro-content .intro { gap: 20px; align-items: flex-start; }
+.repro-content .intro > button { flex-shrink: 0; }
+.repro-content .intro h1 { font-size: 30px; }
+.repro-content .intro .muted { font-size: 13px; margin-bottom: 8px; }
+.app-return-link { color: #b8cf9e; font-size: 12px; text-decoration: underline; text-decoration-color: #536343; text-underline-offset: 4px; }
+.import-entry-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 1200px) {
+    .repro-content .layout { grid-template-columns: 1fr; }
+    .repro-content .settings { position: static; }
+    .repro-content #roles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 15px; }
+}
+@media (max-width: 900px) {
+    .app-sidebar, .sidebar.app-sidebar { position: relative; inset: auto; width: auto; padding: 18px 20px; overflow: visible; border-right: 0; border-bottom: 1px solid var(--line); }
+    .app-main.app-main { margin-left: 0; }
+    .app-brand { margin: 0 0 17px; align-items: center; font-size: 19px; }
+    .app-brand-mark { width: 29px; height: 29px; font-size: 13px; margin: 0; }
+    .app-brand small, .app-sidebar-note, .refs-sidebar-note, .app-sidebar .sidebar-footer { display: none; }
+    .app-navigation { flex-direction: row; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .app-navigation > .app-nav-link { flex: 1; }
+    .app-navigation .app-nav-link { padding: 9px 10px; white-space: nowrap; font-size: 12px; gap: 7px; }
+    .app-navigation > .app-nav-link small, .app-navigation #nav-reference-count { display: none; }
+    .app-navigation .app-advanced { border: 0; margin: 0; padding: 0; }
+    .app-advanced > summary { padding: 10px 8px; }
+    .app-advanced[open] { flex: 1 1 100%; }
+    .app-advanced-menu { padding: 0; }
+    .app-advanced-menu .app-nav-link { padding: 10px; }
+    .app-project-heading.nav-heading { margin: 17px 0 12px; padding: 14px 2px 0; }
+    .app-sidebar > #projects { display: flex; gap: 8px; flex: none; min-height: 0; margin: 0; padding: 3px 0; overflow: auto; }
+    .app-sidebar .project-item { min-width: 178px; width: 178px; padding: 10px; margin: 0; gap: 7px; }
+    .repro-page .topbar { height: 60px; padding: 0 24px; }
+    .repro-content { padding: 28px 24px; }
+}
+@media (max-width: 580px) {
+    .import-heading { flex-direction: column; align-items: flex-start; }
+    .app-sidebar, .sidebar.app-sidebar { padding: 16px; }
+    .app-navigation .app-nav-link { padding: 9px 7px; gap: 6px; }
+    .app-navigation .app-nav-icon { font-size: 16px; }
+    .app-advanced > summary { padding: 10px 4px; }
+    .app-advanced > summary::after { margin-left: 5px; }
+    .repro-content { padding: 27px 17px; }
+    .repro-content .intro h1 { font-size: 25px; }
+    .repro-content .intro > button { padding: 7px 10px; font-size: 12px; }
+    .repro-content #roles { grid-template-columns: 1fr; }
+    .repro-page .topbar { padding: 0 17px; }
+}

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#121617">
+    <title>参考视频 · Video Remake</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c4f279'/%3E%3Cpath d='M12 8v16l13-8z' fill='%23121617'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./references.css">
+    <link rel="stylesheet" href="./navigation.css">
+    <script src="./references.js" type="module"></script>
+</head>
+<body class="references-page">
+    <a class="skip-link" href="#reference-library">跳到参考清单</a>
+    <aside class="sidebar app-sidebar" aria-label="工作区导航">
+        <a class="app-brand" href="./" aria-label="Video Remake 首页"><span class="app-brand-mark" aria-hidden="true">▶</span><span>video<span class="app-brand-light">remake</span><small>从参考到自己的作品。</small></span></a>
+        <nav class="app-navigation" aria-label="工作区导航">
+            <a class="app-nav-link" href="./references" aria-current="page"><span class="app-nav-icon" aria-hidden="true">▤</span><span>参考视频<small>收集原片，选择制作参考</small></span><span id="nav-reference-count">—</span></a>
+            <a class="app-nav-link" href="./"><span class="app-nav-icon" aria-hidden="true">▧</span><span>制作工作台<small>编辑模板，合成与查看成片</small></span></a>
+            <details class="app-advanced"><summary>高级功能</summary><div class="app-advanced-menu"><a class="app-nav-link" href="./repro"><span class="app-nav-icon" aria-hidden="true">↗</span><span>AI 复刻实验<small>自动复刻、评审与方法提炼</small></span></a></div></details>
+        </nav>
+        <div class="refs-sidebar-note"><span class="live-dot"></span><p>本地参考库<small>原片留在原位置。</small></p></div>
+    </aside>
+    <main id="references-main" class="refs-main app-main">
+        <header class="topbar"><div class="breadcrumb">参考视频</div><span class="refs-local">本地工作区</span></header>
+        <div class="refs-content">
+            <section class="refs-intro"><div><h1>参考视频</h1><p>添加原片，再从参考创建制作。</p></div><button id="add-reference" type="button" class="refs-button refs-primary">＋ 添加参考</button></section>
+            <div id="page-status" class="refs-notice" role="status" aria-live="polite" hidden></div>
+            <div id="download-activity" class="refs-activity" role="status" hidden><span class="live-dot"></span><span>正在下载视频，完成后自动加入清单。</span><button id="view-download" type="button" class="refs-text-button">查看进度 →</button></div>
+            <section id="reference-library" class="refs-library" aria-labelledby="library-heading">
+                <div class="refs-library-heading"><h2 id="library-heading" tabindex="-1">我的参考 <span id="visible-count"></span></h2><p class="refs-counts">共 <span id="total-count">—</span> 条<span class="refs-count-separator">·</span><span id="available-count">—</span> 条原片可用</p></div>
+                <div id="library-filters" class="refs-library-toolbar"><label class="refs-search"><span aria-hidden="true">⌕</span><input id="reference-search" type="search" placeholder="搜索标题或关联制作" aria-label="搜索参考视频"></label><label class="refs-check"><input id="available-only" type="checkbox">仅显示可用</label><button id="refresh-references" type="button" class="refs-text-button">↻ 刷新</button></div>
+                <p id="library-loading" class="refs-empty" role="status">正在读取参考清单…</p><div id="reference-list" class="refs-list"></div>
+            </section>
+            <details id="jobs-section" class="refs-job-history" hidden><summary>下载记录 <span id="jobs-summary"></span></summary><p id="jobs-status" class="refs-form-status" role="status" aria-live="polite"></p><div id="job-list"></div><p class="refs-history-note">刷新页面可继续查看，服务重启后记录清空；已添加的参考仍会保留。</p></details>
+        </div>
+    </main>
+    <dialog id="add-dialog" class="refs-dialog refs-add-dialog" aria-labelledby="add-heading">
+        <div class="refs-dialog-heading"><div><button id="back-methods" type="button" class="refs-text-button refs-back" hidden>← 其他添加方式</button><h2 id="add-heading">添加参考视频</h2></div><button id="close-add" class="refs-close" type="button" aria-label="关闭添加参考">✕</button></div>
+        <div id="add-methods"><p class="refs-dialog-description">原片在哪里？选择一种方式开始。</p><div class="refs-methods">
+            <button id="tab-file" type="button" class="refs-method" data-panel="file" data-add-method="file"><span class="refs-method-icon" aria-hidden="true">▷</span><span><strong>本地视频</strong><small>添加电脑上已有的一个视频</small></span><span aria-hidden="true">→</span></button>
+            <button id="tab-folder" type="button" class="refs-method" data-panel="folder" data-add-method="folder"><span class="refs-method-icon" aria-hidden="true">▤</span><span><strong>整个文件夹</strong><small>先扫描，再勾选需要的视频</small></span><span aria-hidden="true">→</span></button>
+            <button id="tab-download" type="button" class="refs-method" data-panel="download" data-add-method="download"><span class="refs-method-icon" aria-hidden="true">↗</span><span><strong>视频链接</strong><small>下载一个视频并加入清单</small></span><span aria-hidden="true">→</span></button>
+        </div><div class="refs-advanced-entry"><span>已有整理好的文件清单？</span><button id="tab-manifest" type="button" class="refs-text-button" data-panel="manifest" data-add-method="manifest">导入清单 →</button></div></div>
+        <section id="panel-file" class="refs-input-panel" hidden>
+            <form id="file-form"><fieldset>
+                <label class="refs-field">视频文件路径<input id="file-path" type="text" required placeholder="例如 /path/to/reference.mp4" autocomplete="off" aria-describedby="file-help"></label>
+                <p id="file-help" class="refs-help">粘贴运行工作台的电脑上的文件路径。添加后只引用原片，不复制文件。</p>
+                <details class="refs-more"><summary>更多设置（选填）</summary><div class="refs-field-row"><label class="refs-field">标题<input id="file-title" type="text" maxlength="500" autocomplete="off" placeholder="留空使用文件名"></label><label class="refs-field">参考标识<input id="file-id" type="text" maxlength="100" pattern="[a-zA-Z0-9_\-]+" autocomplete="off" placeholder="留空自动生成"></label></div><p class="refs-help">自定义标识使用字母、数字、下划线或连字符。</p></details>
+                <p id="file-status" class="refs-form-status" role="status" aria-live="polite"></p><div class="refs-form-actions"><button type="submit" class="refs-button refs-primary">添加到参考清单</button></div>
+            </fieldset></form>
+        </section>
+        <section id="panel-folder" class="refs-input-panel" hidden>
+            <form id="scan-form"><fieldset><label class="refs-field">文件夹路径<input id="scan-path" type="text" required autocomplete="off" placeholder="例如 /path/to/videos"></label><label class="refs-check"><input id="scan-recursive" type="checkbox">包含子文件夹</label><div class="refs-form-actions"><button type="submit" class="refs-button refs-secondary">扫描视频</button></div><p id="scan-status" class="refs-form-status" role="status" aria-live="polite"></p></fieldset></form>
+            <section id="scan-results" class="refs-scan-results" aria-label="扫描候选" hidden><div class="refs-scan-toolbar"><strong id="scan-count"></strong><button id="select-new" type="button" class="refs-text-button">选择未登记</button><button id="clear-selection" type="button" class="refs-text-button">清空</button></div><div id="scan-candidates" class="refs-candidates"></div><div class="refs-form-actions"><span id="selection-count" class="refs-help">已选择 0 个</span><button id="import-selected" type="button" class="refs-button refs-primary" disabled>添加选中视频</button></div></section>
+        </section>
+        <section id="panel-manifest" class="refs-input-panel" hidden>
+            <form id="manifest-form"><fieldset><label class="refs-field">清单文件路径<input id="manifest-path" type="text" required autocomplete="off" placeholder="例如 sources.json"></label><label class="refs-field">原片所在的根目录 <span>选填</span><input id="manifest-root" type="text" autocomplete="off" placeholder="留空使用当前配置"></label><details class="refs-more"><summary>清单格式说明</summary><p class="refs-help">支持 video-remake.source-list@1 格式的 manifest。清单里的文件路径相对原片根目录解析，全部条目检查通过后才添加。</p></details><p id="manifest-status" class="refs-form-status" role="status" aria-live="polite"></p><div class="refs-form-actions"><button type="submit" class="refs-button refs-primary">导入清单</button></div></fieldset></form>
+        </section>
+        <section id="panel-download" class="refs-input-panel" hidden>
+            <form id="download-form"><fieldset><label class="refs-field">视频链接<input id="download-url" type="url" required autocomplete="off" placeholder="https://…"></label><label class="refs-inline-field">最高画质<select id="download-quality"><option value="1080">1080p</option><option value="720">720p</option></select></label><p class="refs-help refs-download-help">下载在后台继续，完成后自动加入参考清单。暂不支持播放列表和直播。</p><details class="refs-more"><summary>下载工具检查</summary><p class="refs-help">使用工作台电脑上的 yt-dlp 下载。</p><button id="download-doctor" type="button" class="refs-button refs-secondary">检查下载工具</button><p id="doctor-status" class="refs-form-status" role="status" aria-live="polite"></p></details><p id="download-status" class="refs-form-status" role="status" aria-live="polite"></p><div class="refs-form-actions"><button id="download-submit" type="submit" class="refs-button refs-primary">开始下载</button></div></fieldset></form>
+        </section>
+    </dialog>
+    <dialog id="production-dialog" class="refs-dialog refs-production-dialog" aria-labelledby="production-heading"><form id="production-form"><div class="refs-dialog-heading"><h2 id="production-heading">创建制作</h2><button id="close-production" class="refs-close" type="button" aria-label="关闭创建制作">✕</button></div><p id="production-reference" class="refs-help"></p><label class="refs-field">制作名称<input id="production-slug" type="text" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" autocomplete="off" placeholder="例如 my-first-remake"></label><p class="refs-help">使用小写字母、数字和连字符，创建后即可进入制作。</p><p id="production-status" class="refs-form-status" role="status" aria-live="polite"></p><div class="refs-form-actions"><button id="cancel-production" type="button" class="refs-button refs-secondary">取消</button><button id="production-submit" type="submit" class="refs-button refs-primary">创建制作</button></div></form></dialog>
+    <dialog id="preview-dialog" class="refs-dialog refs-preview-dialog" aria-labelledby="preview-title">
+        <div class="refs-dialog-heading"><h2 id="preview-title">播放原片</h2><button id="close-preview" class="refs-close" type="button" aria-label="关闭原片播放">✕</button></div>
+        <video id="reference-player" controls playsinline preload="metadata"></video>
+        <p id="preview-error" class="refs-card-error" role="status" hidden>暂时无法播放此文件，请检查原片是否仍可读取，或浏览器是否支持该视频编码。</p>
+    </dialog>
+</body>
+</html>

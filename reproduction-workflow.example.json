@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "roles": {
+    "teacher": "high-capability-target",
+    "extractor": "high-capability-target",
+    "executor": "economical-target",
+    "reviewer": "review-target"
+  },
+  "policy": {
+    "maxAttempts": 3,
+    "maxCalls": 48,
+    "maxDurationMs": 5400000,
+    "maxToolCalls": 600,
+    "maxRenderCalls": 64,
+    "maxTokens": null,
+    "maxCostUsd": null,
+    "allowTeacherAssistance": false,
+    "renderProvider": "local",
+    "reviewSamples": 2
+  },
+  "execution": {
+    "protocol": "video-remake.staged-execution@1",
+    "feedbackMode": "independent",
+    "maxStageRevisions": 2,
+    "maxFinalSubmissions": 3,
+    "maxPreviewJobs": 48,
+    "reviewerTimeoutMs": 600000,
+    "reserveOverheadMs": 120000,
+    "prototypeRequirements": [
+      "character-interaction",
+      "complex-motion"
+    ],
+    "minPrototypeShots": 2
+  }
+}

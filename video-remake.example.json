@@ -1,0 +1,32 @@
+{
+  "assetRoot": "assets/source",
+  "quality": "1080",
+  "source": {
+    "provider": "local",
+    "baseUrl": "http://127.0.0.1:8888/video/api/v1/",
+    "tokenEnv": "VIDEO_REMAKE_SOURCE_TOKEN",
+    "directoryTemplate": "videos/{id}",
+    "videoFile": "video.mp4",
+    "thumbFile": "thumb.jpg",
+    "requestTimeoutMs": 15000,
+    "pollIntervalMs": 2000,
+    "waitTimeoutMs": 600000
+  },
+  "media": {
+    "image": {
+      "provider": "codex-image"
+    },
+    "video": {
+      "provider": "comfy-mcp"
+    },
+    "transcribe": {
+      "provider": "mlx-whisper"
+    }
+  },
+  "download": {
+    "provider": "yt-dlp",
+    "executable": "yt-dlp",
+    "directory": "assets/source/downloads",
+    "timeoutMs": 1800000
+  }
+}

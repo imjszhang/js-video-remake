@@ -1,0 +1,2 @@
+# 保留第三方工具包原始字节及校验哈希，不检查其上游空白格式。
+resources/repro-toolkit/three-r186/*.js -whitespace

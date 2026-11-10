@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "roles": {
+    "teacher": "repro-teacher",
+    "extractor": "repro-teacher",
+    "executor": "repro-executor",
+    "reviewer": "repro-teacher"
+  },
+  "policy": {
+    "maxCalls": 24,
+    "maxDurationMs": 5400000,
+    "maxToolCalls": 400,
+    "maxRenderCalls": 32,
+    "allowTeacherAssistance": false,
+    "renderProvider": "local",
+    "reviewSamples": 2
+  },
+  "execution": {
+    "protocol": "video-remake.staged-execution@1",
+    "feedbackMode": "independent",
+    "maxStageRevisions": 1,
+    "maxFinalSubmissions": 2,
+    "maxPreviewJobs": 24,
+    "reviewerTimeoutMs": 600000,
+    "reserveOverheadMs": 120000,
+    "prototypeRequirements": ["complex-motion"],
+    "minPrototypeShots": 1
+  }
+}
