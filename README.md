@@ -8,7 +8,7 @@
 
 [快速开始](#快速开始) · [制作流程](#选择你的制作流程) · [文档](#命令与详细文档) · [反馈问题](https://github.com/imjszhang/js-video-remake/issues)
 
-[![Version](https://img.shields.io/badge/version-0.1.0-orange)](https://github.com/imjszhang/js-video-remake/releases/tag/v0.1.0)
+[![Version](https://img.shields.io/badge/version-0.2.0-orange)](https://github.com/imjszhang/js-video-remake/releases/tag/v0.2.0)
 
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.15-339933?logo=nodedotjs&logoColor=white)
 ![HyperFrames](https://img.shields.io/badge/HyperFrames-0.8.191-6366f1)
@@ -21,7 +21,7 @@
 
 提供网页界面和命令行。视频在本机渲染，模型和素材服务按需接入。
 
-> **当前版本：0.1.0 · 测试版。** 核心流程仍在迭代，接口、模板格式和配置可能调整。使用前请备份本地制作数据。查看[更新记录](CHANGELOG.md)与[版本约定](docs/versioning.md)。
+> **当前版本：0.2.0 · 测试版。** 核心流程仍在迭代，接口、模板格式和配置可能调整。使用前请备份本地制作数据。查看[更新记录](CHANGELOG.md)与[版本约定](docs/versioning.md)。
 
 ## 为什么用 video-remake
 

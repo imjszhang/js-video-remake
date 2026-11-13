@@ -1,6 +1,6 @@
 {
   "name": "video-remake",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "对标视频复刻工作台：管理本地参考视频，生成独立复刻项目模板并验证 Agent 执行",
   "author": "imjszhang",
   "license": "MIT",
