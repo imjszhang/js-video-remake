@@ -7,6 +7,7 @@ const COMMANDS = new Set([
     'check', 'captions', 'normalize', 'studio', 'timeline',
     'media:doctor', 'media:prepare', 'media:image', 'media:video', 'media:transcribe', 'media:land',
     'video:new', 'video:fork', 'video:list', 'video:render', 'video:import', 'video:add', 'video:pack', 'video:unpack', 'video:remix', 'video:generate',
+    'template:script',
     'agent:config', 'agent:doctor', 'agent:plan', 'agent:run',
     'agent:status', 'agent:logs', 'agent:cancel',
     'repro:config', 'repro:doctor', 'repro:list', 'repro:init', 'repro:teacher',
@@ -174,6 +175,7 @@ Reproduction options:
   video:unpack <FILE.video>   导入外部模板并新建制作 [--as SLUG]；不执行安装或脚本
   video:remix <slug>         另存为新模板 --title 名称 [--video 包名 --style 样式.json]；清除个人输入
   video:generate <slug>      Agent 生成新模板 --title 名称 --prompt 修改要求 [--video 包名 --target Agent --mode derive|revise]
+  template:script <slug>     导出提词稿 [--video 包名 --lang zh|en --format txt|srt|json|cards --out FILE]
   media:doctor                Show configured image/video/transcribe providers and probe them [--task NAME]
   media:prepare --task NAME --request FILE
                               本地检查素材需求、能力与输入文件，输出工具交接信息；不生成、不探活
@@ -226,6 +228,8 @@ Options:
   --mode derive|revise        video:generate：新建独立模板（默认）或更新当前模板版本
   --video NAME                Code video package under videos/ (required when there are several)
   --out FILE                  media:image / media:video 输出，或 video:pack 的 .video 文件
+  --lang zh|en                template:script 提词稿语言（默认 zh）
+  --format txt|srt|json|cards template:script 输出格式（默认 txt；不加 --out 时写到标准输出）
   --skip-install              video:new / video:fork: do not run npm in the package
   --alpha keep|flatten        Alpha still or video: ProRes 4444, or composite on black
   --max-chars N               Caption cue length (default 16)

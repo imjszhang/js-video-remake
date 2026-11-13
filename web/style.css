@@ -1360,6 +1360,10 @@ h2 {
 .editor-report-errors { color: #ffb4a9; }
 .editor-report-warnings { color: #e3ca8c; }
 .editor-script { margin: 20px 0; font-size: 13px; }
+.editor-prompt { margin: 14px 0 4px; }
+.editor-prompt-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.editor-prompt-links a { display: inline-block; padding: 8px 12px; border: 1px solid var(--line, #d9d7cf); border-radius: 7px; text-decoration: none; color: inherit; font-size: 13px; }
+.editor-prompt-links a:hover { border-color: var(--accent, #c96); }
 .editor-script pre { max-height: 440px; overflow: auto; padding: 18px; border-radius: 8px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
 .editor-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .editor-preview-grid img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }

@@ -21,7 +21,7 @@ import { studioProduction, timelineProduction } from '../src/studio.js';
 import { runDoctor } from '../src/doctor.js';
 import { appError } from '../src/errors.js';
 import { mediaDoctor, mediaPrepare, mediaImage, mediaVideo, mediaLand, mediaTranscribe } from '../src/media/index.js';
-import { addVideoAsset, checkVideo, forkVideo, importVideo, listVideosCommand, newVideo, packVideo, renderVideo, unpackVideo, remixTemplate } from '../src/videos.js';
+import { addVideoAsset, checkVideo, forkVideo, importVideo, listVideosCommand, newVideo, packVideo, renderVideo, unpackVideo, remixTemplate, getTemplatePromptScript } from '../src/videos.js';
 
 export async function execute(parsed, env = process.env, deps = {}) {
     if (parsed.help || !parsed.command) return { help: true };
@@ -173,6 +173,20 @@ export async function execute(parsed, env = process.env, deps = {}) {
         return ok(await mediaLand(config, {
             slug, kind: parsed.flags.kind, from: parsed.flags.from, intent: parsed.flags.intent, provider: parsed.flags.provider, id: parsed.flags.id,
         }));
+    }
+    if (parsed.command === 'template:script') {
+        if (parsed.positionals.length !== 1) throw appError('INVALID_INPUT', 'template:script 需要一个制作 slug。');
+        const script = await getTemplatePromptScript(config, {
+            slug: parsed.positionals[0], name: parsed.flags.video,
+            format: parsed.flags.format || 'txt', language: parsed.flags.lang || 'zh',
+        });
+        if (!parsed.flags.out) return ok({ ...script, command: 'template:script', text: script.content, out: null });
+        const out = path.resolve(config.workspace, parsed.flags.out);
+        try { await fs.lstat(out); throw appError('INVALID_INPUT', `输出文件已存在：${parsed.flags.out}`); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        await fs.mkdir(path.dirname(out), { recursive: true });
+        await fs.writeFile(out, script.content, { flag: 'wx' });
+        return ok({ ...script, command: 'template:script', content: undefined, text: undefined, out });
     }
     if (parsed.command === 'video:unpack') {
         if (parsed.positionals.length !== 1) throw appError('INVALID_INPUT', 'video:unpack 需要一个 .video 文件路径。');

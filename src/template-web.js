@@ -4,7 +4,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { appError } from './errors.js';
 import { resolveConfig } from './config.js';
-import { resolveVideo, getTemplateEditor, getTemplateCaptions, saveTemplateCaptions, getTemplateVoice, getTemplateVoiceAsset, saveTemplateInputs, storeTemplateAsset, runTemplateAction, saveVideoStyle } from './videos.js';
+import { resolveVideo, getTemplateEditor, getTemplateCaptions, saveTemplateCaptions, getTemplateVoice, getTemplateVoiceAsset, saveTemplateInputs, storeTemplateAsset, runTemplateAction, saveVideoStyle, getTemplatePromptScript } from './videos.js';
 
 import { probeTemplateProvider } from './template-provider-probe.js';
 import { saveTemplateProvider } from './template-providers.js';
@@ -203,7 +203,7 @@ export function createTemplateController({ root, deps = {}, sendAsset }) {
     return {
         withPackageLock,
         async handle(request, response, url) {
-            const match = /^\/api\/projects\/([a-z0-9-]+)\/templates\/([a-z0-9-]+-v[0-9]+)\/(editor|captions(?:\/original)?|voice(?:\/audio)?|providers(?:\/test|\/models)?|inputs|style|assets|jobs(?:\/[a-f0-9-]+(?:\/cancel)?)?|preview\/[^/]+)$/.exec(url.pathname);
+            const match = /^\/api\/projects\/([a-z0-9-]+)\/templates\/([a-z0-9-]+-v[0-9]+)\/(editor|captions(?:\/original)?|prompt|voice(?:\/audio)?|providers(?:\/test|\/models)?|inputs|style|assets|jobs(?:\/[a-f0-9-]+(?:\/cancel)?)?|preview\/[^/]+)$/.exec(url.pathname);
             if (!match) return false;
             const options = { slug: match[1], name: match[2] };
             const route = match[3], method = request.method;
@@ -221,6 +221,19 @@ export function createTemplateController({ root, deps = {}, sendAsset }) {
                     await sendAsset(request, response, await getTemplateVoiceAsset(config, options), url.searchParams.get('download') === '1');
                 } else if (route === 'captions' && ['GET', 'HEAD'].includes(method)) {
                     json(response, 200, await getTemplateCaptions(config, options), head);
+                } else if (route === 'prompt' && ['GET', 'HEAD'].includes(method)) {
+                    const script = await getTemplatePromptScript(config, {
+                        ...options,
+                        format: url.searchParams.get('format') || 'txt',
+                        language: url.searchParams.get('language') || 'zh',
+                    });
+                    const data = Buffer.from(script.content, 'utf8');
+                    response.writeHead(200, {
+                        'Content-Type': script.contentType,
+                        'Content-Disposition': `attachment; filename="${script.filename}"`,
+                        'Content-Length': data.length, 'Cache-Control': 'no-store',
+                    });
+                    response.end(head ? undefined : data);
                 } else if (route === 'captions/original' && ['GET', 'HEAD'].includes(method)) {
                     const captions = await getTemplateCaptions(config, { ...options, originalOnly: true });
                     if (!captions.supported) throw appError('VIDEO_INVALID', captions.reason);

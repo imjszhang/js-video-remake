@@ -327,6 +327,16 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         write(data.html);
         return;
     }
+    if (data?.command === 'template:script') {
+        // Without --out the draft itself is the output, so it can be piped or redirected.
+        if (data.text !== undefined && data.text !== null) {
+            for (const line of data.text.replace(/\n$/, '').split('\n')) write(line);
+            return;
+        }
+        write(`已导出提词稿: ${data.out}`);
+        write(`${data.language === 'en' ? '英文' : '中文'} · ${data.count} 句${data.skipped ? ` · 跳过空句 ${data.skipped}` : ''}${data.pauses ? ` · ${data.pauses} 处停顿` : ''}`);
+        return;
+    }
     if (data?.command === 'studio' || data?.command === 'timeline') {
         write(data.output || `${data.command}: ${data.slug}`);
         return;

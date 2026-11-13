@@ -15,6 +15,7 @@ import { readZip, writeZip } from './zip.js';
 import { assertSlug, emptyCatalog } from './schema.js';
 import { readTemplateStyle, saveTemplateStyle } from './template-style.js';
 import { templateCaptionRows, mergeTemplateCaptionRows, validateEditedCaptionRows, captionRevision } from './template-captions.js';
+import { buildPromptScript, renderPromptScript, PROMPT_FORMATS } from './template-prompt.js';
 import { describeTemplateLineages, templateLineagePointer } from './template-lineage.js';
 
 // A code video package is a standalone HyperFrames project under
@@ -938,6 +939,33 @@ async function captionEditor(pkg, { originalOnly = false } = {}) {
 /** Read-only: does not initialize inputs, execute scripts or change the template. */
 export async function getTemplateCaptions(config, options = {}) {
     return captionEditor(await editorPackage(config, options), { originalOnly: options.originalOnly });
+}
+
+/**
+ * Read-only teleprompter draft built from the current effective captions and
+ * filled identity. Never writes into the package, so frozen versions can export too.
+ */
+export async function getTemplatePromptScript(config, options = {}) {
+    const format = options.format || 'txt';
+    const language = options.language || 'zh';
+    if (!Object.hasOwn(PROMPT_FORMATS, format)) throw invalid('提词稿格式只能是 txt、srt、json 或 cards。');
+    const pkg = await editorPackage(config, options);
+    const captions = await captionEditor(pkg);
+    if (!captions.supported) throw invalid(captions.reason);
+    const inputs = await editorInputs(pkg);
+    const duration = pkg.manifest.frame.frames / pkg.manifest.frame.fps;
+    const script = buildPromptScript({
+        rows: captions.rows, identity: inputs.identity || {},
+        fields: pkg.manifest.template.inputs?.identity?.fields || {},
+        duration, language, gapSeconds: options.gapSeconds, allowPlaceholders: options.allowPlaceholders === true,
+    });
+    const content = renderPromptScript(script, format, { slug: pkg.production.slug, video: pkg.name, title: `${pkg.manifest.title || pkg.name} 口播提词稿` });
+    return {
+        slug: pkg.production.slug, video: pkg.name, format, language,
+        filename: `${pkg.name}-prompt-${language}${PROMPT_FORMATS[format].ext}`,
+        contentType: PROMPT_FORMATS[format].type, content,
+        count: script.count, skipped: script.skipped, pauses: script.pauses,
+    };
 }
 
 function speechFingerprint(captions, inputs, duration) {

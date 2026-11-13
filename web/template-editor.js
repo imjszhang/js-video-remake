@@ -792,6 +792,22 @@ function render(context) {
     const script = element('details', 'editor-script');
     script.append(element('summary', '', data.script ? '查看录制稿与时间安排' : '录制稿尚未生成'));
     script.append(element('pre', '', data.script || '点击“准备录制稿”，然后按每句话的时间窗录制人物录像和口播。'));
+    if (data.schema?.captions) {
+        const prompt = element('div', 'editor-prompt');
+        prompt.append(element('p', 'editor-hint', '导出提词稿：只保留要念的话，可直接用于提词器；需要先填好个人信息。'));
+        const controls = element('div', 'editor-prompt-links');
+        for (const [language, label] of [['zh', '中文'], ['en', '英文']]) {
+            for (const [format, text, hint] of [['txt', '下载提词稿', '纯文本，一句一行'], ['srt', '下载字幕', 'SRT 时间轴'], ['cards', '大字提词卡', '一页一句，适合平板']]) {
+                const link = element('a', 'editor-secondary', `${label}${text}`);
+                link.href = `${context.base}/prompt?language=${language}&format=${format}`;
+                link.download = '';
+                link.title = hint;
+                controls.append(link);
+            }
+        }
+        prompt.append(controls);
+        script.append(prompt);
+    }
     materials.append(script);
     const next = element('button', 'editor-secondary', '下一步：预览与导出'); next.type = 'button';
     next.addEventListener('click', () => switchStep(context, 'output')); materials.append(next);

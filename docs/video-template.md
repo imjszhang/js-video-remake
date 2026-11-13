@@ -127,7 +127,7 @@ node cli/remake.js video:import my-template
 在「模板工作台」选择当前模板版本，再按「改造模板」「填写素材」「预览与导出」切换步骤。无需改造时可以直接填写素材；当前版本是否已有可播放成片会单独提示。
 
 1. 在「填写素材」填写名字、账号等模板声明的个人信息；上传人物录像、口播或背景音乐。人物录像可同时作为口播声音。网页把文件保存到当前包的 `inputs/uploads/`，支持恢复默认。影音单文件最多 1 GiB，字幕和文字 JSON 最多 2 MiB。人物画面起点和取景位置可单独调整。
-2. 点击「准备录制稿」。首次操作自动运行锁定依赖的 `npm ci`，初始化尚不存在的输入配置并构建录制稿；已有填写内容不会被初始化覆盖。展开录制稿可查看每句时间安排。
+2. 点击「准备录制稿」。首次操作自动运行锁定依赖的 `npm ci`，初始化尚不存在的输入配置并构建录制稿；已有填写内容不会被初始化覆盖。展开录制稿可查看每句时间安排，并可导出提词稿（见下文「导出提词稿」）。
 3. 点击「检查素材」，查看错误、提醒和检查结果。缺少可选人物素材时沿用占位画面，缺少口播时只有配乐；模板报告的错误会阻止预览和合成。
 4. 在「预览与导出」生成画面截图，默认抽取三处画面；也可填写最多 12 个预览秒数。这是静态预览，不是可播放的视频；页面不直接执行或嵌入模板 HTML。中英字幕可在「填写素材」逐句修改并保存后预览；画面文字仍可上传 JSON 替换。字幕继续使用模板的固定条数与时间轴。
 5. 点击「合成可播放视频」，自动保存当前填写内容、检查输入、构建、渲染并登记为草稿。任务在后台运行，页面显示当前阶段，支持取消；刷新页面可恢复查看进度，服务重启会将未完成任务标为中断。完成后可进入「成片放映」播放或下载对应版本。
@@ -140,7 +140,7 @@ node cli/remake.js video:import my-template
 
 准备、检查、预览和合成均会运行模板自己的代码，只对已选择的模板执行固定操作；导入和只读查看不会运行代码。处理期间锁定该模板的填写与上传，避免成片和输入不一致。已登记草稿的包不可修改，可点击「复制为新版本继续编辑」创建新的可编辑版本。
 
-工作台接口前缀为 `/api/projects/<slug>/templates/<包名>`：`GET /editor` 读取声明、输入、录制稿、Agent 可用状态与任务；`PUT /inputs` 保存 `{inputs}`；`GET /captions` 读取原稿、当前字幕、固定时间窗和修订标识，`GET /captions/original` 下载原始字幕 JSON；`PUT /captions` 保存 `{rows:[{zh,en}], revision?, inputs?}`（提供修订标识时检测过期更新），不会更改时间轴；`POST /assets?kind=...&filename=...` 上传原始字节；`POST /jobs` 启动制作操作 `{action: prepare|check|preview|compose|fork, at?: [秒数]}`，也支持下文的 `generate` 和 `export`；`GET /jobs/<id>` 查询进度，`POST /jobs/<id>/cancel` 取消；`GET /preview/<图片名>` 只读取校验后的预览图片。写操作需要 `X-Remake-Action: template`，JSON 请求需要 `Content-Type: application/json`，素材上传需要 `application/octet-stream`。网页不接受包外绝对路径或符号链接素材。
+工作台接口前缀为 `/api/projects/<slug>/templates/<包名>`：`GET /editor` 读取声明、输入、录制稿、Agent 可用状态与任务；`GET /prompt?language=zh|en&format=txt|srt|json|cards` 下载提词稿（只读，不写模板包）；`PUT /inputs` 保存 `{inputs}`；`GET /captions` 读取原稿、当前字幕、固定时间窗和修订标识，`GET /captions/original` 下载原始字幕 JSON；`PUT /captions` 保存 `{rows:[{zh,en}], revision?, inputs?}`（提供修订标识时检测过期更新），不会更改时间轴；`POST /assets?kind=...&filename=...` 上传原始字节；`POST /jobs` 启动制作操作 `{action: prepare|check|preview|compose|fork, at?: [秒数]}`，也支持下文的 `generate` 和 `export`；`GET /jobs/<id>` 查询进度，`POST /jobs/<id>/cancel` 取消；`GET /preview/<图片名>` 只读取校验后的预览图片。写操作需要 `X-Remake-Action: template`，JSON 请求需要 `Content-Type: application/json`，素材上传需要 `application/octet-stream`。网页不接受包外绝对路径或符号链接素材。
 
 ### 独立使用
 
@@ -247,3 +247,16 @@ Provider 表单支持“测试连接”和“获取模型列表”，填写接�
 生成与其他模板操作共用异步任务及取消机制，刷新或关网页不会中止，关闭本地服务会中止。失败或取消保留此前的口播，只有成功才替换当前设置。已合成版本需先复制成新版本。
 
 接口：`GET /voice` 获取音色、可用状态及当前口播（含 `stale`）；`POST /jobs` 使用 `{action:"voice", voice:"音色 ID", language:"zh"}`，可带字幕 `revision` 防止使用过期稿；`GET/HEAD /voice/audio` 播放当前口播（支持 Range），加 `?download=1` 下载。路径均位于同一模板 API 下，音频与生成记录保存在该包的 `inputs/uploads/`，沿用模板的个人素材排除规则。
+
+### 导出提词稿
+
+需要自己录音或真人拍摄时，「录制稿」面板下方可以导出提词稿。它按当前已保存的字幕、个人信息和固定时间轴生成，只包含要念的话，用于外部提词器、平板或打印：
+
+- **纯文本**（`txt`）：一句一行，去掉时间码、英文字幕和模板标记，句间空白超过 2 秒写成「……（停顿 N 秒）……」；
+- **SRT**（`srt`）：保留每句原时间窗，可用于支持字幕的提词器或后期参考；
+- **提词卡**（`cards`）：一页一句的网页，字号随屏幕放大，带起始时间和每句语速，适合平板或打印；
+- **结构化 JSON**（`json`）：适合脚本或后续自动对齐使用，包含每句起止、文字和「字数 ÷ 时间窗」语速。
+
+导出属于只读操作，不写模板包，已合成版本也能导出。个人信息中的身份占位符（如 `{{name}}`）未填写或仍是模板默认值时会拒绝导出并指出具体句号，避免录进占位文字。中英文分开导出；所选语言为空的句子跳过，不改变时间轴。
+
+网页入口在「录制稿」面板；命令行对应 `remake template:script <slug> --video <包名> [--lang zh|en] [--format txt|srt|json|cards]`，不加 `--out` 直接输出到标准输出，例如 `remake template:script demo --video demo-v1 > prompt.txt`。接口为 `GET /prompt?language=zh|en&format=txt|srt|json|cards`，返回带下载文件名的内容。
