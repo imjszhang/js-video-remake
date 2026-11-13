@@ -1,3 +1,4 @@
+import { readCatalog, writeCatalog } from './catalog.js';
 import { listVideos, packVideo, unpackVideo } from './videos.js';
 import { resolveConfig } from './config.js';
 import http from 'node:http';
@@ -13,6 +14,14 @@ import { createTemplateController } from './template-web.js';
 const staticFiles = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
     ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+    ['/api.js', ['api.js', 'text/javascript; charset=utf-8']],
+    ['/ui.js', ['ui.js', 'text/javascript; charset=utf-8']],
+    ['/state.js', ['state.js', 'text/javascript; charset=utf-8']],
+    ['/library.js', ['library.js', 'text/javascript; charset=utf-8']],
+    ['/playback.js', ['playback.js', 'text/javascript; charset=utf-8']],
+    ['/projects.js', ['projects.js', 'text/javascript; charset=utf-8']],
+    ['/templates.js', ['templates.js', 'text/javascript; charset=utf-8']],
+    ['/library-model.js', ['library-model.js', 'text/javascript; charset=utf-8']],
     ['/comparison.js', ['comparison.js', 'text/javascript; charset=utf-8']],
     ['/versions.js', ['versions.js', 'text/javascript; charset=utf-8']],
     ['/workspace.js', ['workspace.js', 'text/javascript; charset=utf-8']],
@@ -25,11 +34,15 @@ const staticFiles = new Map([
     ['/references.css', ['references.css', 'text/css; charset=utf-8']],
     ['/style.css', ['style.css', 'text/css; charset=utf-8']],
     ['/navigation.css', ['navigation.css', 'text/css; charset=utf-8']],
+    ['/theme.css', ['theme.css', 'text/css; charset=utf-8']],
     ['/repro', ['repro.html', 'text/html; charset=utf-8']],
     ['/repro.html', ['repro.html', 'text/html; charset=utf-8']],
     ['/repro.js', ['repro.js', 'text/javascript; charset=utf-8']],
     ['/repro.css', ['repro.css', 'text/css; charset=utf-8']],
 ]);
+
+/** 前端静态资源的唯一清单；页面里的 <script>/<link> 必须在这里登记。 */
+export const WEB_ASSETS = staticFiles;
 
 export function parseByteRange(header, size) {
     if (!header) return null;
@@ -159,6 +172,28 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                     if (!response.destroyed) return json(response, error.code === 'ALREADY_EXISTS' ? 409 : 400, { error: error.message });
                 } finally {
                     if (temporary) await fs.rm(temporary, { recursive: true, force: true });
+                }
+                return;
+            }
+            const archive = /^\/api\/projects\/([a-z0-9-]+)\/(archive|restore)$/.exec(url.pathname);
+            if (archive && request.method === 'POST') {
+                if (request.headers['x-remake-action'] !== 'archive' || request.headers['sec-fetch-site'] === 'cross-site') {
+                    return json(response, 403, { error: '请从项目页面操作归档。' });
+                }
+                try {
+                    await withCatalogWrite(async () => {
+                        const config = resolveConfig({ workspace });
+                        const catalog = await readCatalog(config.catalogPath);
+                        const project = catalog.productions.find(item => item.slug === archive[1]);
+                        if (!project) return json(response, 404, { error: '项目不存在。' });
+                        project.archived = archive[2] === 'archive';
+                        await writeCatalog(config.catalogPath, catalog);
+                        json(response, 200, { archived: project.archived });
+                    });
+                } catch (error) {
+                    // 列表按宽松规则读取台账，写入则要求当前格式；格式不符时不改动台账。
+                    if (error.code !== 'CATALOG_INVALID') throw error;
+                    json(response, 409, { error: '台账不是当前格式，无法保存归档状态。请运行 remake doctor 查看原因。' });
                 }
                 return;
             }

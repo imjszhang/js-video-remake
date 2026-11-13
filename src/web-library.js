@@ -172,6 +172,7 @@ export async function readWebLibrary(workspace, { env = process.env } = {}) {
         const project = {
             slug: entry.slug,
             title: typeof entry.title === 'string' && entry.title.trim() ? entry.title : entry.slug,
+            archived: entry.archived === true,
             status: typeof entry.status === 'string' ? entry.status : 'unknown',
             updatedAt: null,
             referenceCount: Array.isArray(entry.referenceIds) ? entry.referenceIds.length : 0,

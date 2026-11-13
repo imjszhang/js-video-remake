@@ -415,3 +415,55 @@ test('missing catalog is an empty library without creating files; invalid catalo
     await fs.writeFile(path.join(root, 'catalog.json'), 'broken');
     await assert.rejects(readWebLibrary(root));
 });
+
+test('archive and restore persist to the catalog, need the page header, and never drop project data', async (t) => {
+    const f = await fixture(t);
+    const catalog = { version: 1, ...f.catalog };
+    await f.write('catalog.json', catalog);
+    const base = await serve(t, f.root);
+    const post = (route, headers = {}) => fetch(`${base}${route}`, { method: 'POST', headers });
+    const page = { 'X-Remake-Action': 'archive' };
+    const archived = async () => Object.fromEntries((await (await fetch(`${base}/api/projects`)).json()).projects.map(project => [project.slug, project.archived]));
+    const untouched = { series: false, delivered: false, empty: false };
+    assert.deepEqual(await archived(), untouched, 'projects without the flag are active');
+
+    for (const headers of [{}, { 'X-Remake-Action': 'pack' }, { ...page, 'Sec-Fetch-Site': 'cross-site' }]) {
+        const refused = await post('/api/projects/series/archive', headers);
+        assert.equal(refused.status, 403);
+        assert.match((await refused.json()).error, /归档/);
+    }
+    assert.equal((await fetch(`${base}/api/projects/series/archive`)).status, 404, 'GET is not an archive action');
+    const missing = await post('/api/projects/nope/archive', page);
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /不存在/);
+    assert.deepEqual(await archived(), untouched, 'refused and unknown requests change nothing');
+
+    const done = await post('/api/projects/series/archive', page);
+    assert.equal(done.status, 200);
+    assert.deepEqual(await done.json(), { archived: true });
+    assert.deepEqual(await archived(), { ...untouched, series: true });
+    const stored = JSON.parse(await fs.readFile(path.join(f.root, 'catalog.json'), 'utf8'));
+    assert.deepEqual(stored.productions.find(item => item.slug === 'series'), { ...catalog.productions[0], archived: true }, 'every other field of the entry is kept');
+    assert.deepEqual(stored.productions.filter(item => item.slug !== 'series'), catalog.productions.slice(1));
+    assert.deepEqual(stored.references, catalog.references);
+    await fs.access(path.join(f.root, 'productions/series/drafts/v1/clip.mp4'));
+    const library = (await (await fetch(`${base}/api/projects`)).json()).projects.find(project => project.slug === 'series');
+    assert.equal(library.videos.length, 1, 'an archived project keeps its videos');
+
+    assert.deepEqual(await (await post('/api/projects/series/archive', page)).json(), { archived: true }, 'archiving twice is harmless');
+    assert.deepEqual(await (await post('/api/projects/series/restore', page)).json(), { archived: false });
+    assert.deepEqual(await archived(), untouched);
+});
+
+test('archiving refuses a catalog the strict reader rejects, with a reason, and leaves the file alone', async (t) => {
+    const f = await fixture(t);
+    const base = await serve(t, f.root);
+    const before = await fs.readFile(path.join(f.root, 'catalog.json'), 'utf8');
+    assert.equal((await (await fetch(`${base}/api/projects`)).json()).projects.length, 3, 'the lenient list still shows the projects');
+    const response = await fetch(`${base}/api/projects/series/archive`, { method: 'POST', headers: { 'X-Remake-Action': 'archive' } });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /台账不是当前格式.*doctor/);
+    assert.equal(await fs.readFile(path.join(f.root, 'catalog.json'), 'utf8'), before);
+    const next = await fetch(`${base}/api/projects`);
+    assert.equal(next.status, 200, 'a refused write does not block later requests');
+});

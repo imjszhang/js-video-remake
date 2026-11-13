@@ -8,6 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c4f279'/%3E%3Cpath d='M12 8v16l13-8z' fill='%23121617'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./navigation.css">
+  <link rel="stylesheet" href="./theme.css">
   <script src="./app.js" type="module"></script>
 </head>
 <body>
@@ -19,29 +20,54 @@
         <a class="app-nav-link" href="./" aria-current="page"><span class="app-nav-icon" aria-hidden="true">▧</span><span>制作工作台<small>编辑模板，合成与查看成片</small></span></a>
         <details class="app-advanced"><summary>高级功能</summary><div class="app-advanced-menu"><a class="app-nav-link" href="./repro"><span class="app-nav-icon" aria-hidden="true">↗</span><span>AI 复刻实验<small>自动复刻、评审与方法提炼</small></span></a></div></details>
     </nav>
-    <div class="nav-heading app-project-heading"><span>我的制作</span><span id="project-count">—</span></div>
+    <div class="nav-heading app-project-heading"><span>我的制作</span><span class="nav-heading-meta"><span id="project-count">—</span><button type="button" id="new-project" class="new-project" title="新建制作" aria-label="新建制作">＋</button></span></div>
     <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索项目或视频" aria-label="搜索项目或视频" autocomplete="off"></label>
-    <div class="filters" role="group" aria-label="项目筛选"><button type="button" class="active" data-filter="all" aria-pressed="true">全部项目</button><button type="button" data-filter="playable" aria-pressed="false">可播放</button></div>
+    <div class="filter-row"><div class="filters" role="group" aria-label="项目范围"><button type="button" class="active" data-scope="active" aria-pressed="true">进行中</button><button type="button" data-scope="archived" aria-pressed="false">已归档</button></div><label class="playable-toggle"><input id="playable-only" type="checkbox"> 可播放</label></div>
     <nav id="projects" aria-label="项目列表"><p class="sidebar-message">正在读取项目…</p></nav>
     <div class="sidebar-footer"><span class="live-dot"></span><span>本地工作区<small>VIDEO REMAKE / LIBRARY</small></span><button type="button" id="refresh" class="icon-button" aria-label="刷新项目库" title="刷新项目库">↻</button></div>
   </aside>
   <main id="main" class="app-main" tabindex="-1">
-    <header class="topbar"><div class="breadcrumb">制作工作台</div><span class="local-label"><span class="live-dot"></span> 本地工作区</span></header>
+    <header class="topbar"><nav class="breadcrumb" aria-label="当前位置"><button type="button" id="crumb-home" class="crumb">制作工作台</button><span id="crumb-separator" class="crumb-separator" aria-hidden="true" hidden>/</span><span id="crumb-project" class="crumb-current" aria-current="page" hidden></span></nav><span class="local-label"><span class="live-dot"></span> 本地工作区</span></header>
     <div class="workspace">
-      <section class="intro"><div><p class="eyebrow">YOUR WORK, IN FRAME</p><h1>制作工作台<span class="heading-dot">.</span></h1><p class="intro-copy">选择已有制作继续编辑，或开始一个新制作。</p></div><div id="stats" class="stats" aria-label="媒体库统计"></div></section>
-      <section class="template-import" aria-labelledby="import-heading">
-          <div class="import-heading"><div><h2 id="import-heading">开始新制作</h2><p>选择参考视频，或导入已有的视频模板。</p></div><div class="import-entry-actions"><a class="download-link" href="./references">选择参考视频</a><button id="import-toggle" type="button" class="download-link" aria-expanded="false" aria-controls="import-form">＋ 导入模板</button></div></div>
-          <form id="import-form" hidden>
-              <label for="import-file">模板文件（.video） <input id="import-file" type="file" accept=".video" required aria-describedby="import-help"></label>
-              <label for="import-slug">制作标识（选填）<input id="import-slug" type="text" placeholder="例如 my-first-video" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="100" autocomplete="off" aria-describedby="import-help"></label>
-              <p id="import-help">文件不超过 100 MiB。制作标识使用小写字母、数字和连字符，留空使用模板默认名称；重复导入时换一个标识。</p>
-              <div class="import-actions"><button id="import-submit" type="submit" class="download-link">导入并创建项目</button><span id="import-status" role="status" aria-live="polite"></span></div>
-          </form>
-      </section>
+      <div id="library-view">
+        <section class="hero">
+          <div class="hero-copy"><p class="eyebrow">YOUR WORK, IN FRAME</p><h1>制作工作台<span class="heading-dot">.</span></h1><p class="intro-copy">绑定参考原片，编辑模板，合成成片。所有素材都留在本机。</p></div>
+          <div id="stats" class="stats" aria-label="媒体库统计"></div>
+        </section>
+        <section id="recent" class="recent" aria-labelledby="recent-heading" hidden>
+          <div class="section-heading"><h2 id="recent-heading">继续制作</h2><p>按最近改动排序</p></div>
+          <div id="recent-projects" class="project-grid"></div>
+        </section>
+        <section class="start" aria-labelledby="start-heading">
+          <div class="section-heading"><h2 id="start-heading">开始新制作</h2><p>两种起点，都会建立一个新的制作</p></div>
+          <div class="start-grid">
+            <article class="start-card">
+              <span class="start-icon" aria-hidden="true">▤</span>
+              <div><h3>从参考视频开始</h3><p>收集原片，选出要复刻的那一条，再从参考创建制作。</p></div>
+              <a class="btn btn-primary" href="./references">选择参考视频 <span aria-hidden="true">→</span></a>
+            </article>
+            <article class="start-card">
+              <span class="start-icon" aria-hidden="true">▧</span>
+              <div><h3>导入 .video 模板</h3><p>已有模板包？导入后直接换成你的素材、字幕和口播。</p></div>
+              <button id="import-toggle" type="button" class="btn btn-ghost" aria-expanded="false" aria-controls="import-form">＋ 导入模板</button>
+              <form id="import-form" hidden>
+                  <label for="import-file">模板文件（.video） <input id="import-file" type="file" accept=".video" required aria-describedby="import-help"></label>
+                  <label for="import-slug">制作标识（选填）<input id="import-slug" type="text" placeholder="例如 my-first-video" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="100" autocomplete="off" aria-describedby="import-help"></label>
+                  <p id="import-help">文件不超过 100 MiB。制作标识使用小写字母、数字和连字符，留空使用模板默认名称；重复导入时换一个标识。</p>
+                  <div class="import-actions"><button id="import-submit" type="submit" class="btn btn-primary">导入并创建项目</button><span id="import-status" role="status" aria-live="polite"></span></div>
+              </form>
+            </article>
+          </div>
+        </section>
+        <div id="library-empty" class="library-empty" hidden><span class="empty-icon">▷</span><h3>还没有制作</h3><p>从参考视频开始，或导入一个 .video 模板。</p></div>
+      </div>
       <div id="notice" role="status" aria-live="polite" hidden></div>
       <div id="loading" class="loading"><span class="live-dot"></span> 正在加载本地作品</div>
       <section id="project-view" hidden aria-label="当前项目">
-        <div class="project-header"><div><p id="project-kicker" class="eyebrow"></p><h2 id="project-title"></h2></div><span id="project-status" class="status-badge"></span></div>
+        <div class="project-header">
+          <div class="project-identity"><p id="project-kicker" class="eyebrow"></p><h2 id="project-title"></h2></div>
+          <div class="project-actions"><span id="project-status" class="status-badge"></span><details class="project-menu"><summary aria-label="更多项目操作" title="更多项目操作">⋯</summary><div class="project-menu-panel"><button type="button" id="archive-project">归档项目</button></div></details></div>
+        </div>
 
         <div class="workspace-tabs" role="tablist" aria-label="项目工作区">
           <button type="button" id="template-tab" role="tab" aria-selected="true" aria-controls="template-workspace" data-workspace="template">模板工作台 <span id="template-tab-count"></span></button>
@@ -49,10 +75,11 @@
         </div>
         <section id="template-workspace" role="tabpanel" aria-labelledby="template-tab">
         <section id="template-editor" class="template-editor" hidden aria-label="模板制作工作台"></section>
-          <details id="template-archive" class="template-archive"><summary>全部模板包 <span>下载与分享 · .video 文件</span></summary></details>
+          <details id="template-archive" class="template-archive"><summary>全部模板包 <span>下载与分享 · .video 文件</span></summary>
+            <section id="templates" class="templates" hidden aria-labelledby="templates-heading"><div class="templates-heading"><h3 id="templates-heading">.video 模板</h3><span id="templates-count"></span></div><p class="templates-note">.video 是可再次导入和修改的模板包。要下载可播放的视频，请先合成，再前往成片放映。</p><div id="template-list" class="template-list"></div></section>
+          </details>
         </section>
         <section id="playback-workspace" role="tabpanel" aria-labelledby="playback-tab" hidden>
-          <div class="playback-heading"><div><p class="eyebrow">SCREENING ROOM</p><h3>已合成的视频</h3><p id="playback-context">这里播放已合成的视频，模板截图在工作台查看。</p></div><button type="button" id="back-to-template" class="editor-secondary">返回模板工作台 →</button></div>
         <div id="version-controls" class="version-controls" hidden><label for="draft-version">播放版本 <select id="draft-version" aria-label="复刻版本" aria-describedby="version-note"></select></label><p id="version-note" aria-live="polite"></p><div id="version-detail" class="version-detail" hidden></div></div>
         <div id="screening" class="screening">
           <section class="watch" aria-label="视频播放器">
@@ -78,7 +105,6 @@
         </div>
         <div id="empty-project" class="empty-project" hidden><span class="empty-icon">▷</span><h3>这个项目还在制作中</h3><p>登记成片或审阅草稿后，会自动出现在这里。</p></div>
         </section>
-        <section id="templates" class="templates" hidden aria-labelledby="templates-heading"><div class="templates-heading"><h3 id="templates-heading">.video 模板</h3><span id="templates-count"></span></div><p class="templates-note">.video 是可再次导入和修改的模板包。要下载可播放的视频，请先合成，再前往成片放映。</p><div id="template-list" class="template-list"></div></section>
       </section>
       <footer class="workspace-footer"><span>VIDEO REMAKE</span><span>项目 · 草稿 · 成片</span></footer>
     </div>

@@ -642,8 +642,8 @@ function render(context) {
     const data = context.data;
     const container = context.container; container.replaceChildren();
     const header = element('div', 'editor-heading');
-    const heading = element('div');
-    heading.append(element('p', 'eyebrow', 'CURRENT TEMPLATE'), element('h3', '', data.title || '模板工作台'));
+    // 模板名称已在项目头和下方的选择器里出现，这里只留给读屏用的标题。
+    const heading = element('h3', 'sr-only', data.title || '模板工作台');
     const groups = groupTemplatePackages(context.project.templatePackages);
     const group = groups.find(item => item.versions.some(pkg => pkg.name === context.video));
     const choose = name => {
@@ -666,15 +666,17 @@ function render(context) {
     selectors.append(field('模板', family), field('版本', select));
     header.append(heading, selectors);
     container.append(header);
+    const seconds = data.frame.frames / data.frame.fps;
+    const facts = element('p', 'editor-facts');
+    facts.append(element('span', 'editor-summary', `${data.frame.width} × ${data.frame.height} · ${seconds.toFixed(2)} 秒 · ${data.frame.fps} 帧/秒`));
     const lineage = data.lineage;
     if (lineage) {
         const source = lineage.origin;
-        const provenance = source ? `基于「${source.title}」v${source.version} 创建 · 当前模板 v${lineage.version}` : `来源模板 · 保留原版 v${lineage.version}`;
-        container.append(element('p', 'editor-lineage', provenance));
-        if (lineage.parent && lineage.parent.id === lineage.id) container.append(element('p', 'editor-hint', `此版本由本模板 v${lineage.parent.version} 迭代而来。`));
+        const provenance = source ? `基于「${source.title}」v${source.version} 创建` : `来源模板 · 保留原版 v${lineage.version}`;
+        facts.append(element('span', 'editor-lineage', provenance));
+        if (lineage.parent && lineage.parent.id === lineage.id) facts.append(element('span', 'editor-lineage-parent', `由本模板 v${lineage.parent.version} 迭代而来`));
     }
-    const seconds = data.frame.frames / data.frame.fps;
-    container.append(element('p', 'editor-summary', `${data.frame.width} × ${data.frame.height} · ${seconds.toFixed(2)} 秒 · ${data.frame.fps} 帧/秒`));
+    container.append(facts);
     const playable = Boolean(templatePlaybackVideo(context.project, context.video));
     const versionState = element('div', `editor-version-state ${playable ? 'is-playable' : 'is-pending'}`);
     const stateCopy = element('div');
@@ -698,7 +700,6 @@ function render(context) {
         const panel = element('section', 'editor-step-panel'); panel.id = `editor-panel-${name}`;
         panel.setAttribute('aria-label', label); context.panels[name] = panel;
     }
-    container.append(navigation);
     const statusRow = element('div', 'editor-job editor-global-job');
     const status = element('p', 'editor-job-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); context.status = status;
     const cancel = element('button', 'editor-secondary', '取消当前操作'); cancel.type = 'button'; context.cancel = cancel;
@@ -719,6 +720,8 @@ function render(context) {
         context.consoleScript, context.consoleOutput);
     container.append(consolePanel);
     context.report = element('div', 'editor-report'); container.append(context.report);
+    // 步骤导航紧贴它切换的面板；版本状态、任务进度和检查结果属于整个版本，放在导航之上。
+    container.append(navigation);
     renderAgent(context, context.panels.agent);
     const materials = context.panels.materials;
     materials.append(element('h4', '', '准备这版视频要用的内容'), element('p', 'editor-hint', '填写个人信息、修改字幕，再直接生成口播。人物录像和背景音乐按需添加。'));
