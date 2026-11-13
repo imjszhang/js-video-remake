@@ -1,48 +1,76 @@
-import { $, notify, setRetryHandler } from './ui.js';
-import { state, scopedProjects } from './state.js';
-import { initLibrary, renderProjects, renderStats } from './library.js';
-import { initPlayback, resumePlaybackIfNeeded, pausePlayback } from './playback.js';
-import { selectProject, showLibraryView, initProjectControls, setReloadHandler } from './projects.js';
+/** 入口：载入台账，决定显示制作库还是某个项目，并把各模块接起来。 */
+import { api } from './api.js';
+import { $, notify } from './ui.js';
+import { state, changed, updateHash, readHash, playerModeFrom } from './state.js';
+import { projectTitle, resolveSelection } from './library-model.js';
+import { initLibrary, showHome } from './library.js';
+import { initPlayback } from './playback.js';
+import { initProjects, openProject, closeProject } from './projects.js';
 
-async function load() {
-    $('#refresh').disabled = true;
-    try {
-        const response = await fetch('./api/projects', { cache: 'no-store' }); if (!response.ok) throw new Error('load failed');
-        const data = await response.json(); if (!Array.isArray(data.projects)) throw new Error('invalid data');
-        state.projects = data.projects; renderStats(); renderProjects();
-        const hash = new URLSearchParams(location.hash.slice(1));
-        const slug = state.selected || hash.get('project');
-        const scoped = scopedProjects();
-        const selected = scoped.find((project) => project.slug === slug)
-            || state.projects.find((project) => project.slug === slug)
-            || scoped.find((project) => project.videos.length)
-            || scoped[0];
-        if (selected) selectProject(selected.slug, state.video || hash.get('video'), state.version || hash.get('version'));
-        else { showLibraryView(); notify(''); }
-        if (selected) notify(data.warnings?.length ? `有 ${data.warnings.length} 项素材暂不可用，其他视频仍可正常播放。` : '');
-    } catch { notify('无法读取项目库，请检查本地视频服务后重试。', true); }
-    finally { $('#loading').hidden = true; $('#refresh').disabled = false; }
+function setCrumb(project) {
+    $('#crumb-project').textContent = project ? projectTitle(project) : '';
+    $('#crumb-project').hidden = !project;
+    $('#crumb-separator').hidden = !project;
+    if (project) $('#crumb-home').removeAttribute('aria-current'); else $('#crumb-home').setAttribute('aria-current', 'page');
+    document.title = `${project ? `${projectTitle(project)} · ` : ''}制作工作台 · Video Remake`;
 }
 
-setRetryHandler(load);
-setReloadHandler(load);
+/** 回到制作库首页。 */
+function goHome() {
+    closeProject();
+    state.home = true;
+    showHome(true); setCrumb(null);
+    changed(); updateHash();
+}
 
-initLibrary({
-    load,
-    selectProject: (slug) => selectProject(slug),
-    scopeChanged() { load(); },
-    showLibrary() { showLibraryView(); showLibrary(); },
-});
+/** 用户主动打开一个项目：侧栏范围跟着项目走，保证它在列表里可见。 */
+function open(slug, target) {
+    const project = state.projects.find(item => item.slug === slug);
+    if (!project) return;
+    state.scope = project.archived ? 'archived' : 'active';
+    show(project, target);
+}
+
+function show(project, target) {
+    showHome(false); setCrumb(project);
+    openProject(project.slug, target);
+}
+
+async function load({ leaveProject = false } = {}) {
+    $('#refresh').disabled = true;
+    try {
+        const data = await api.projects();
+        if (!Array.isArray(data?.projects)) throw new Error('invalid data');
+        state.projects = data.projects;
+        const hash = readHash();
+        const firstLoad = !state.selected && !state.home;
+        const slug = leaveProject ? null : state.selected || (firstLoad ? hash.get('project') : null);
+        const stayHome = !leaveProject && (state.home || (firstLoad && hash.has('home') && !hash.get('project')));
+        const { project, scope } = resolveSelection(state.projects, { scope: state.scope, slug, deepLink: firstLoad });
+        state.scope = scope;
+        if (stayHome || !project) goHome();
+        else show(project, { videoId: state.video || hash.get('video'), version: state.version || hash.get('version') });
+        notify(data.warnings?.length ? `有 ${data.warnings.length} 项素材暂不可用，其他视频仍可正常播放。` : '');
+    } catch (error) {
+        notify(error.name === 'ApiError' ? `无法读取项目库：${error.message}` : '无法读取项目库，请检查本地视频服务后重试。', () => load());
+    } finally {
+        $('#loading').hidden = true;
+        $('#refresh').disabled = false;
+    }
+}
+
+initLibrary({ openProject: open, openHome: goHome, reload: load });
+initProjects({ reload: load });
 initPlayback();
-initProjectControls();
 
+$('#crumb-home').addEventListener('click', goHome);
 window.addEventListener('hashchange', () => {
-    const params = new URLSearchParams(location.hash.slice(1));
-    state.workspace = params.get('workspace');
-    if (['remake', 'original', 'compare'].includes(params.get('view'))) state.preferredMode = params.get('view');
-    if (params.get('project')) selectProject(params.get('project'), params.get('video'), params.get('version'));
+    const hash = readHash();
+    if (playerModeFrom(hash)) state.preferredMode = playerModeFrom(hash);
+    if (hash.get('project')) {
+        if (hash.get('project') === state.selected) state.workspace = hash.get('workspace');
+        open(hash.get('project'), { videoId: hash.get('video'), version: hash.get('version') });
+    } else if (hash.has('home')) goHome();
 });
-window.addEventListener('pageshow', (event) => { if (event.persisted) resumePlaybackIfNeeded(); });
-window.addEventListener('pagehide', pausePlayback);
 
 load();

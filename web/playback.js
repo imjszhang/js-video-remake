@@ -1,3 +1,4 @@
+/** 成片放映：播放器、播放列表、版本切换，以及原版与复刻的同步对比。 */
 import { createComparisonController } from './comparison.js';
 import { $, node, duration, bytes, audio, kindLabels, mediaUrl, sourceUrl, downloadUrl, setLink } from './ui.js';
 import { state, activeProject, activeVideos, currentVideo, playbackVersionLabel, updateHash } from './state.js';
@@ -65,9 +66,6 @@ export function releasePlayers() {
 
 export function renderVideoMetadata() {
     const video = currentVideo(); if (!video) return;
-    const pkg = activeProject()?.templatePackages?.find(item => item.name === video.version);
-    const displayVersion = pkg ? playbackVersionLabel(video.version) : video.version;
-    $('#playback-context').textContent = `当前播放：${displayVersion || kindLabels[video.kind] || '已合成视频'}。已合成视频在这里播放，模板版本在模板工作台编辑。`;
     const original = state.mode === 'original';
     const asset = original ? video.reference : video;
     const player = original ? $('#original-player') : $('#player');
