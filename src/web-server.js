@@ -1,3 +1,4 @@
+import { readCatalog, writeCatalog } from './catalog.js';
 import { listVideos, packVideo, unpackVideo } from './videos.js';
 import { resolveConfig } from './config.js';
 import http from 'node:http';
@@ -13,6 +14,12 @@ import { createTemplateController } from './template-web.js';
 const staticFiles = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
     ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+    ['/ui.js', ['ui.js', 'text/javascript; charset=utf-8']],
+    ['/state.js', ['state.js', 'text/javascript; charset=utf-8']],
+    ['/library.js', ['library.js', 'text/javascript; charset=utf-8']],
+    ['/playback.js', ['playback.js', 'text/javascript; charset=utf-8']],
+    ['/projects.js', ['projects.js', 'text/javascript; charset=utf-8']],
+    ['/templates.js', ['templates.js', 'text/javascript; charset=utf-8']],
     ['/comparison.js', ['comparison.js', 'text/javascript; charset=utf-8']],
     ['/versions.js', ['versions.js', 'text/javascript; charset=utf-8']],
     ['/workspace.js', ['workspace.js', 'text/javascript; charset=utf-8']],
@@ -160,6 +167,22 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                 } finally {
                     if (temporary) await fs.rm(temporary, { recursive: true, force: true });
                 }
+                return;
+            }
+            const archive = /^\/api\/projects\/([a-z0-9-]+)\/(archive|restore)$/.exec(url.pathname);
+            if (archive && request.method === 'POST') {
+                if (request.headers['x-remake-action'] !== 'archive' || request.headers['sec-fetch-site'] === 'cross-site') {
+                    return json(response, 403, { error: '请从项目页面操作归档。' });
+                }
+                await withCatalogWrite(async () => {
+                    const config = resolveConfig({ workspace });
+                    const catalog = await readCatalog(config.catalogPath);
+                    const project = catalog.productions.find(item => item.slug === archive[1]);
+                    if (!project) return json(response, 404, { error: '项目不存在。' });
+                    project.archived = archive[2] === 'archive';
+                    await writeCatalog(config.catalogPath, catalog);
+                    json(response, 200, { archived: project.archived });
+                });
                 return;
             }
             const pack = /^\/api\/projects\/([a-z0-9-]+)\/templates\/([a-z0-9-]+-v[0-9]+)$/.exec(url.pathname);
