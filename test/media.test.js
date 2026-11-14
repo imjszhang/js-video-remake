@@ -102,6 +102,8 @@ test('media:doctor probes each provider and hides local paths', async (t) => {
     assert.equal(result.data.media.transcribe.ready, true);
     const health = fetch.calls.find((call) => call.url === 'http://whisper.test/health');
     assert.equal(health.init.headers.Authorization, 'Bearer whisper-secret');
+    const comfy = fetch.calls.find((call) => call.url === 'http://comfy.test:8188/system_stats');
+    assert.equal(comfy.init.headers, undefined);
     assert.equal(result.data.media.image.guide, '.agents/skills/remake-media/providers/openai-image.md');
     assert.equal(result.data.media.image.settings.apiKeyFile, undefined);
     assert.equal(result.data.media.transcribe.settings.apiKeyFile, undefined);
@@ -119,6 +121,26 @@ test('media:doctor probes each provider and hides local paths', async (t) => {
     const scoped = await execute(parseArgv(['media:doctor', '--task', 'video']), env, { fetchImpl: down.impl }).catch((error) => error);
     assert.equal(scoped.code, 'DOCTOR_FAILED');
     assert.match(scoped.message, /ComfyUI 目标不可达/);
+});
+
+test('comfy-mcp doctor sends the gateway key when a key file is configured', async (t) => {
+    const workspace = await tempWorkspace(t);
+    const keyFile = path.join(workspace.directory, 'comfy-key');
+    await fs.writeFile(keyFile, 'gateway-key\n');
+    const env = {
+        ...workspace.env,
+        COMFYUI_URL: 'http://127.0.0.1:8888/services/comfyui/',
+        COMFYUI_API_KEY_FILE: keyFile,
+    };
+    const fetch = fakeFetch({
+        'http://127.0.0.1:8888/services/comfyui/system_stats': { body: { system: { comfyui_version: '0.41.0' } } },
+    });
+    const result = await execute(parseArgv(['media:doctor', '--task', 'video']), env, { fetchImpl: fetch.impl });
+    assert.equal(result.ok, true);
+    assert.equal(result.data.media.video.ready, true);
+    assert.equal(result.data.media.video.version, 'ComfyUI 0.41.0');
+    assert.equal(fetch.calls[0].init.headers.Authorization, 'Bearer gateway-key');
+    assert.equal(result.data.media.video.settings.apiKeyFile, undefined);
 });
 
 test('media:transcribe posts verbose_json with the key and writes the transcript', async (t) => {

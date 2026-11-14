@@ -6,12 +6,20 @@
 
 ### 新增
 
-- 素材任务新增语音合成。默认 provider 是 `macos-say`，使用 macOS 系统音色；可选 `qwen-tts`，用参考 WAV 和对应台词克隆声音并返回 WAV。命令是 `remake media:speech`。模板工作台的字幕口播仍走原来的系统语音。
+- 素材任务新增语音合成。默认 provider 是 `macos-say`，使用 macOS 系统音色；可选 `qwen-tts`，用参考 WAV 和对应台词克隆声音并返回 WAV。命令是 `remake media:speech`。
+- 模板工作台「根据字幕生成口播」跟随 `media.speech`。选中 `qwen-tts` 时上传 1–30 秒参考音频和其中的原话，逐句克隆并对齐字幕时间；选中 `macos-say` 时仍使用系统音色。
 - 项目可以配置 SOCKS5 代理：`video-remake.json` 的 `proxy` 或环境变量 `VIDEO_REMAKE_PROXY`。配置后，程序自己发出的非本机 HTTP(S) 请求经该代理连接，`localhost` 和 `127.0.0.1` 仍直连。MLX 健康检查在配置了密钥文件时会带上 `Authorization`。
 - 模板工作台可以导出提词稿：按当前字幕和个人信息生成只含念稿内容的纯文本、SRT、结构化 JSON 或大字提词卡，供外部提词器、平板或打印使用。已合成版本同样可以导出，不会写入或修改模板包。
 - 新增命令 `remake template:script <slug> --video <包名> [--lang zh|en --format txt|srt|json|cards --out FILE]`，不加 `--out` 时直接输出到标准输出，便于管道或重定向。
 - 新增网页接口 `GET /prompt`（`?language=zh|en&format=txt|srt|json|cards`），返回带下载文件名的内容。
 - 身份占位符未填写或仍是模板默认值时拒绝导出并指出具体句号；句间空白超过 2 秒会写成停顿标记。
+- `comfy-mcp` 探活可以携带网关密钥。配置 `media.video.apiKeyFile` 或 `COMFYUI_API_KEY_FILE` 后，请求 `system_stats` 会带上 `Authorization`；未配置时仍直接访问。
+- `comfy-mcp` 新增 MCP Hub 连接配置 `hubUrl` / `hubTokenFile`，使用项目独立设备令牌。`media:doctor --task video` 通过 MCP 初始化、工具目录和 `server_info` 检查服务权限与远端在线状态；Hub 配置出错不回退直连，原有 `url` / `apiKeyFile` 保留兼容。
+- Agent 的 ComfyUI 指南补充 Hub 素材上传、`workflow_id` / `task_id` 与 `request_id` 异步任务流程；Hub 输出须下载到客户端后再统一落地。保持 Agent 直接调用 MCP，不新增程序生成入口。
+- 新增 `scripts/configure-mcp-hub.mjs`，为直接打开项目的 Codex、Claude Code、Cursor 生成本机私有的 `comfy-hub` 连接；新增 `scripts/mcp-hub-files.js`，用项目令牌上传参考素材、下载 Hub 输出并可核对 SHA-256。
+- `agent:run` 可通过 `agent-runtime.json` 的 `mcp.projectHub: true` 显式载入当前项目的 `comfy-hub`，支持 Codex、Claude Code、DeepSeek Harness。默认仍关闭 MCP，不读取客户端连接文件或全局服务；只读目标限制为 9 个查询工具，其余任务权限最多 17 个工具，均受设备令牌权限限制。
+- `agent:plan` 的 Hub 描述不含令牌，不读取密钥或写入 MCP 文件；`doctor` / `run` 检查既有令牌与远端服务，执行凭据由环境传入并双层脱敏，临时 MCP 配置退出清理。运行库锁定仓内的 `js-agent-runtime@0.2.3-mcp.1` 本地包，尚未发布，支持 `npm ci` 复现安装。
+- 修复模板任务已显示完成或取消、下一次编辑仍被判定忙碌的竞态：任务终态持久化完成后再同步公布结果并解锁。
 
 ## 0.2.0 — 2026-11-13
 

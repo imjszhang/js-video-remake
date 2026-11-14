@@ -7,7 +7,7 @@
 | 任务 | 默认 provider | 执行方式 | 已验证版本 |
 | --- | --- | --- | --- |
 | 出图 `image` | `codex-image` | Agent 调当前会话的内置生图工具 | 以当前会话工具为准 |
-| 出片 `video` | `comfy-mcp` | Agent 通过 ComfyUI MCP 调非 API MiniMax H3 模板；CLI 做需求准备和探活 | comfy-mcp 0.10.0，ComfyUI 0.41.0 |
+| 出片 `video` | `comfy-mcp` | Agent 通过 MCP Hub 或直连 ComfyUI MCP 调非 API MiniMax H3 模板；CLI 做需求准备和探活 | comfy-mcp 0.10.0，ComfyUI 0.41.0 |
 | 语音合成 `speech` | `macos-say` | `remake media:speech` 调 macOS 系统语音，返回 WAV | say |
 | 转写 `transcribe` | `mlx-whisper` | `remake media:transcribe` 调已部署的 OpenAI 兼容转写端点 | whisper-large-v3 |
 
@@ -197,19 +197,70 @@ node cli/remake.js media:transcribe demo --from speech.wav --require word-timest
 | `media.speech.healthUrl` | `QWEN_TTS_HEALTH_URL` |
 | `media.speech.apiKeyFile` | `QWEN_TTS_API_KEY_FILE` |
 | `media.speech.voice` | `MACOS_SAY_VOICE` |
+| `media.video.hubUrl` | `COMFY_MCP_HUB_URL` |
+| `media.video.hubTokenFile` | `COMFY_MCP_HUB_TOKEN_FILE` |
 | `media.video.url` | `COMFYUI_URL` |
+| `media.video.apiKeyFile` | `COMFYUI_API_KEY_FILE` |
 | `media.transcribe.healthUrl` | `WHISPER_HEALTH_URL` |
 | `media.transcribe.transcriptionUrl` | `WHISPER_TRANSCRIPTION_URL` |
 | `media.transcribe.apiKeyFile` | `WHISPER_API_KEY_FILE` |
 | `media.transcribe.deployDir` | `WHISPER_DEPLOY_DIR` |
 
+`comfy-mcp` 支持两种连接。配置了 `hubUrl` 或 `hubTokenFile` 时，必须成对提供这两个字段，优先检查 MCP Hub；配置缺失或 Hub 检查失败不会回退到直连。未配置 Hub 字段时，保留 `url` / `apiKeyFile` 的直连行为：请求 ComfyUI 的 `system_stats`，有密钥文件时携带 `Authorization`。直连 Comfy MCP 实际出片只使用主机和端口，不能把带路径的网关地址写进 MCP 的 `COMFYUI_URL`。
+
 以上表格是默认工具的设置。MLX 的 `model`（默认 `whisper-large-v3`）和默认 `language` 只能写在配置文件里；单次转写仍可用 `--language` 覆盖语言。配置中的路径支持 `~/`，相对路径按工作区解析。未知 provider、未知任务名或不属于所选 provider 的设置会报 `CONFIG_INVALID`。`video-remake.json` 已被 gitignore；本机路径、地址和密钥只放在这里或环境变量中。`media:doctor` 的可公开设置由各 provider 的 `publicSettings` 声明，不打印密钥文件和安装路径。
 
 访问这些服务若必须经过代理，在配置文件顶层设置 `proxy`，或用环境变量 `VIDEO_REMAKE_PROXY` 覆盖。值是不带凭据的 `socks5://主机:端口`。程序发出的素材请求、素材网关请求和模板接口探测都会使用它；`localhost`、`127.0.0.1` 和 `::1` 仍直接连接。主机名由代理解析。
 
+### 通过 MCP Hub 连接 ComfyUI
+
+本机项目与局域网设备可以共用 Hub 的 ComfyUI 服务。Hub 管理员先为本项目创建设备令牌，授予对应服务的读取和生成权限。在本机私有的 `video-remake.json` 中配置：
+
+```json
+{
+  "media": {
+    "video": {
+      "provider": "comfy-mcp",
+      "hubUrl": "http://hub-host:8899/mcp/comfyui",
+      "hubTokenFile": ".secrets/comfy-hub.token"
+    }
+  }
+}
+```
+
+`hub-host` 替换为运行 Hub 的设备地址；`hubUrl` 是服务的完整 MCP 地址。令牌只写入本机忽略的文件，权限设为 `0600`，不要使用 Hub 管理员密钥。配置完成后运行：
+
+```bash
+node cli/remake.js media:doctor --task video --json
+node scripts/configure-mcp-hub.mjs
+```
+
+第二条命令读取相同的地址和令牌，生成本项目的 `.codex/config.toml`、`.mcp.json`、`.cursor/mcp.json`，服务名为 `comfy-hub`，使用 Streamable HTTP。令牌与连接文件必须位于项目内且已被 Git 忽略，不能用符号链接；连接文件含设备令牌，均以 `0600` 权限保存，不复制进公开材料。脚本不写全局配置、不连接 Hub，也不提交生成任务。已有 JSON 配置中的其他服务与设置保留；任何非本脚本生成的非空 Codex TOML 都会保留并报错，需手动合并连接。指定其他工作区或临时覆盖连接可用 `--workspace DIR`、`--url HTTP_MCP_URL`、`--token-file PATH`。
+
+上述注册脚本用于直接使用本项目的 Codex、Claude Code 或 Cursor；重开客户端，按要求信任项目或启用连接，再确认工具列表出现 `comfy-hub`。
+
+通过 `npm run agent:run` 执行时，在本机 `agent-runtime.json` 顶层设置 `"mcp": { "projectHub": true }`。默认关闭；启用后仅按项目的 `media.video.hubUrl` / `hubTokenFile` 注入 `comfy-hub`，不读取三份客户端连接文件或继承全局 MCP，因此无需先运行注册脚本。支持 Codex、Claude Code 和 DeepSeek Harness；`contextMode: project` 本身不启用 MCP。只读目标最多开放 9 个查询工具，其他任务权限最多开放 17 个工具，仍受已有设备令牌限制。配置、检查与凭据处理见 [Agent 执行](agent-runtime.md#在-agent-任务中使用-mcp-hub)。
+
+Hub 模式会完成 MCP 初始化、读取工具目录，并调用 `server_info` 检查桥接与远端 ComfyUI；还会核对生成流程需要的工具是否对当前设备开放。检查不提交生成任务，也不保证所选模板的节点、模型、显存或付费额度就绪。Agent 仍需能看到自己的 `comfy-hub` 工具，并按返回的实际 schema 调用。
+
+Hub 以设备管理素材与任务：本机文件上传后使用 `asset_id` / `workflow_id`；生成返回 `task.id`，查询与取回使用 `task_id`。每次逻辑提交使用固定的 `request_id`，超时后先查询已有任务。`fetch_outputs` 返回 Hub 素材与下载地址，须携带同一设备令牌下载到当前项目所在设备，取得实际本地文件后才运行 `media:land`。Hub 上的路径、素材 ID 和远端 `prompt_id` 都不能直接当作本机文件。
+
+文件传输脚本默认读取项目的 `hubUrl` / `hubTokenFile`，从服务地址提取服务标识；只上传或下载文件，生成仍由 Agent 直接调用 MCP：
+
+```bash
+node scripts/mcp-hub-files.js upload ./reference.png
+node scripts/mcp-hub-files.js download <asset-id> --out ./result.mp4 --sha256 <返回的sha256>
+node cli/remake.js media:land <slug> --kind video --from ./result.mp4 \
+  --intent "<素材用途>" --provider comfy.run_workflow
+```
+
+上传后使用返回的 `id`；下载的 `asset-id` 来自 `fetch_outputs` 的 `assets`。建议始终提供返回的 `sha256` 核对文件内容；响应缺少文件长度时必须提供，校验失败不会保存结果。下载目录须已存在，已有文件不会覆盖。传输脚本同样支持 `--workspace DIR`、`--url HTTP_MCP_URL`、`--token-file PATH`，令牌文件必须是 `0600` 权限的普通文件，不能用符号链接。上传参考素材与最终下载都使用当前设备令牌，不接受其他设备的素材 ID。
+
+完整操作与直连兼容方式见 [ComfyUI MCP 指南](../.agents/skills/remake-media/providers/comfy-mcp.md)。Hub 首版不开放安装节点、下载模型或重启远端 ComfyUI；缺少依赖时交由服务管理员处理。
+
 ### 语音合成
 
-默认是 `macos-say`：用 macOS 系统音色把台词合成 WAV，不上传参考音频。`qwen-tts` 向兼容接口 `POST /v1/audio/speech` 提交台词、参考 WAV 和参考台词。两条都走 `media:speech`，生成后用 `media:land --kind audio` 登记。切换时替换整个 `media.speech` 对象。`qwen-tts` 的 doctor 在配置了 `healthUrl` 时才会请求健康检查；没有健康检查 URL 时只核对本地配置，不表示服务或额度可用。模板工作台里的「根据字幕生成口播」仍使用原来的 macOS 系统语音，不读取这里的 provider。
+默认是 `macos-say`：用 macOS 系统音色把台词合成 WAV，不上传参考音频。`qwen-tts` 向兼容接口 `POST /v1/audio/speech` 提交台词、参考 WAV 和参考台词。两条都走 `media:speech`，生成后用 `media:land --kind audio` 登记。切换时替换整个 `media.speech` 对象。`qwen-tts` 的 doctor 在配置了 `healthUrl` 时才会请求健康检查；没有健康检查 URL 时只核对本地配置，不表示服务或额度可用。模板工作台的「根据字幕生成口播」使用这里选中的 provider：`qwen-tts` 需要在页面上传参考音频和原话，`macos-say` 继续选择系统音色。两种都会按字幕时间窗对齐成整段口播。
 
 ```bash
 node cli/remake.js media:doctor --task speech
@@ -294,11 +345,17 @@ Azure（示例区域必须替换为实际 Speech 资源支持的区域）：
 
 升级外部项目时，先确认以下约定没有变化。
 
-**ComfyUI MCP**
+**MCP Hub 的 ComfyUI 服务**
 
-- Agent 侧工具：`server_info`、`auth_status`、`search_templates`、`run_template`、`run_workflow`、`job`、`fetch_outputs`、`validate_workflow`、`workflow_deps`、`install_node`、`restart_comfyui`、`generate_image`。参数名 `workflow_path`、`out_dir`、`prompt_id`。
+- Streamable HTTP 地址为 `/mcp/<服务标识>`，通过项目独立设备令牌认证。CLI 探活调用 `initialize`、`tools/list`、`server_info`，读取 `remote.online` 和 `remote.version`；直接客户端使用项目连接配置，`agent:run` 通过显式 `mcp.projectHub` 单独加载当前项目 Hub。
+- 工具包括 `server_info`、`search_templates`、`get_template`、`nodes`、`fetch_template`、`validate_workflow`、`list_workflow_slots`、`list_workflow_notes`、`set_workflow_slot`、`put_asset`、`list_assets`、`upload_file`、`run_template`、`run_workflow`、`generate_image`、`job`、`fetch_outputs`，实际可用目录受设备权限与服务工具范围限制。
+- 输入工作流用 `workflow_id`，素材上传到 ComfyUI 用 `asset_ids`；`run_workflow` / `run_template` / `generate_image` 异步返回 `task.id`，不传 `wait`。用 `job(task_id=...)` 查询，`fetch_outputs(task_id=...)` 取回 Hub 素材，再下载到客户端。重试同一提交复用 `request_id`。
 - 模板：`video_minimax_h3_r2v`、`video_minimax_h3_fun_controlnet_union`、`video_minimax_h3_multiframe_reference`，以及 `video_fastvideo_fasth3_*`。
-- CLI 探活读 ComfyUI 的 `GET <url>/system_stats`，从 `system.comfyui_version` 取版本。
+
+**直连 ComfyUI MCP（兼容）**
+
+- 未配置 Hub 时仍支持原有 Comfy MCP 连接；CLI 探活读 ComfyUI 的 `GET <url>/system_stats`，从 `system.comfyui_version` 取版本。这只验证 ComfyUI，不验证 Agent 的 MCP 注册。
+- 直连工具使用运行 MCP 那台机器上的 `workflow_path` / `out_dir`，以及远端 `prompt_id`；长任务传 `wait=false`。不要混用 Hub 的 ID 参数。`auth_status`、`workflow_deps`、`install_node`、`restart_comfyui` 等仅在实际直连工具目录提供时可用，变更远端环境仍需相应授权。
 
 **MLX Whisper 服务**
 

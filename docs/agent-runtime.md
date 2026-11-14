@@ -1,6 +1,6 @@
 # Agent 执行
 
-本项目通过 npm 包 `js-agent-runtime@0.2.2` 调用本机 Agent CLI，记录任务输入、执行结果和日志。Node.js 要求为 22.15.0 或更新版本；DeepSeek Harness `@deepseek-ai/dsh@0.2.1-rc.2` 已作为项目依赖锁定，`npm install` / `npm ci` 会安装到本项目 `node_modules/.bin/dsh`。Codex 和 Claude Code 仍需在本机单独准备。
+本项目通过 `js-agent-runtime` 调用本机 Agent CLI，记录任务输入、执行结果和日志。当前锁定本仓 `vendor/` 中的 `0.2.3-mcp.1` 本地打包版本，包含显式 MCP 接入接口，尚未发布到 npm；`npm ci` 从锁文件和仓内包复现安装。Node.js 要求为 22.15.0 或更新版本；DeepSeek Harness `@deepseek-ai/dsh@0.2.1-rc.2` 已作为项目依赖锁定，`npm ci` 会安装到本项目 `node_modules/.bin/dsh`。Codex 和 Claude Code 仍需在本机单独准备。
 
 ## 配置与首次运行
 
@@ -42,7 +42,7 @@ npm run agent:run -- --target codex-native \
   --instruction '阅读项目说明，检查制作流程并提出改进建议'
 ```
 
-`doctor` 检查 CLI 能否返回版本信息；`--check-login` 额外检查本机登录元信息。API 目标只检查所需密钥能否从环境变量或本机文件取得，不发送模型请求。检查通过不能证明端点、模型或账号额度可用。禁用目标仍可检查配置、执行 `doctor` 和预览 `plan`，只有 `run` 要求显式启用。
+`doctor` 检查 CLI 能否返回版本信息；`--check-login` 额外检查本机登录元信息。API 目标检查所需模型密钥能否从环境变量或本机文件取得，不发送模型请求。显式启用项目 MCP Hub 时，还会读取设备令牌并检查 Hub 工具与远端 ComfyUI，不提交生成。检查通过不能证明模型端点、账号额度或生产工作流就绪。禁用目标仍可检查配置、执行 `doctor` 和预览 `plan`，只有 `run` 要求显式启用。
 
 ## 配置字段
 
@@ -53,6 +53,7 @@ npm run agent:run -- --target codex-native \
 | `schemaVersion` | 必须为 `1` |
 | `defaultTarget` | 可选，必须对应已有目标；命令行 `--target` 优先 |
 | `timeoutMs` | 默认 `600000`，整数范围 `1000–86400000` |
+| `mcp.projectHub` | 可选布尔值，默认 `false`；`true` 时仅载入项目配置的 `comfy-hub` |
 | `targets` | 目标数组，每个目标的 `name` 必须唯一 |
 | `targets[].enabled` | 布尔值，省略为 `false` |
 | `targets[].harness` | `adapter`、`executable`、`permission`，以及可选的 `contextMode` |
@@ -61,6 +62,37 @@ npm run agent:run -- --target codex-native \
 顶层和目标对象拒绝未知字段；harness/backend 也由 runtime 校验。Codex 的 API 目标使用 `responses`，Claude Code / DeepSeek Harness 的 API 目标使用 `anthropic-messages`。API 目标通过 `apiKeyEnv` 指定环境变量名。
 
 没有 `--target` 或 `defaultTarget` 时，只有配置中恰好一个目标才会自动选择；多个目标必须明确选择。`permission` 支持 `read-only`、`workspace-write`；`bypass` 仅适用于 runtime 支持的 Claude 本机配置或 DeepSeek Harness 组合，应按任务需要自行配置。
+
+## 在 Agent 任务中使用 MCP Hub
+
+先按[素材服务说明](media-providers.md#通过-mcp-hub-连接-comfyui)配置项目 `media.video.hubUrl` / `hubTokenFile`，沿用已有设备令牌；令牌需要访问指定 ComfyUI 服务。然后在本机 `agent-runtime.json` 的顶层添加以下字段，保留已有目标和其他设置：
+
+```json
+{
+  "mcp": {
+    "projectHub": true
+  }
+}
+```
+
+省略或设为 `false` 时，任务继续隔离 MCP，不读取 Hub 令牌。设为 `true` 时，包装层只从当前项目的 `media.video.hubUrl` / `hubTokenFile` 提供一个名为 `comfy-hub` 的 HTTP MCP 服务；不继承全局 MCP，也不读取 `.mcp.json`、`.codex/config.toml` 或 `.cursor/mcp.json` 的服务列表。`codex`、`claude-code`、`deepseek-harness` 三种 adapter 均支持，`contextMode: project` 本身不会打开 MCP。
+
+`agent:run` 不需要先执行 `scripts/configure-mcp-hub.mjs`；该脚本仍用于直接打开的 Codex、Claude Code、Cursor 会话。两种启动方式使用同一个项目 Hub 地址与设备令牌，但各自决定如何加载连接。
+
+工具范围同时受任务权限和 Hub 设备权限限制，目录展示和实际调用都会检查。Codex 使用原生 HTTP 连接；Claude Code / DeepSeek Harness 由运行器内置的连接桥转发到固定的项目 Hub，仍以 MCP 工具方式调用：
+
+- `harness.permission: "read-only"` 只提供 9 个只读工具：`server_info`、`search_templates`、`get_template`、`nodes`、`validate_workflow`、`list_workflow_slots`、`list_workflow_notes`、`job`、`list_assets`。
+- 其他受支持的任务权限最多提供 Hub 的 17 个 ComfyUI 工具；设备令牌的 `read` / `generate` 权限与服务工具范围继续生效，不因为启动 Agent 而扩大授权。生成仍需要当前任务授权，文件与任务流程见 [ComfyUI 指南](../.agents/skills/remake-media/providers/comfy-mcp.md)。
+
+```bash
+npm run agent:plan -- --instruction '仅检查 comfy-hub 的服务状态，不生成素材' --json
+npm run agent:doctor
+npm run agent:run -- --instruction '仅调用 comfy-hub 的 server_info，报告远端状态，不生成素材'
+```
+
+`plan` 只记录不含令牌的连接请求描述，不读取令牌、不访问 Hub，也不创建 MCP 文件。`doctor` 和 `run` 会验证既有设备令牌与远端服务；配置或连接无效时直接报错，不改用直连或加载其他 MCP。`run` 会实际调用选定模型执行指令，上面的示例只检查服务状态。
+
+Hub 令牌只在执行时通过子进程凭据环境传入，不拼入 prompt 或命令参数。需要 MCP 临时配置时，文件中只保存环境变量引用，退出时清理；项目包装层和 runtime 都对已知凭据脱敏，运行记录与日志不保存令牌明文。
 
 ## 指令与项目上下文
 
@@ -81,13 +113,13 @@ npm run agent:plan -- --target claude-local --production my-face \
 
 `NEXT_TASK.md`、`REVIEW.md` 和示例参考路径需替换为实际存在的文件。`--input`、`--skill` 可重复；`--skill` 会把指定技能文件文本加入任务，不自动附带它引用的其他文件。所有输入使用项目内的相对路径，必须是 UTF-8 普通文本文件，单文件最多 256 KiB，指令与收集的输入总计最多 1 MiB；不接受符号链接、越界路径、`.env`、已知凭据文件、本机配置或依赖目录。
 
-`--timeout-ms` 覆盖本次执行时限，范围与配置中的 `timeoutMs` 相同。`--json` 可查看完整 prompt、执行参数和输入哈希。`plan` 只读项目输入，不执行 CLI、读取 API key、创建运行目录或修改项目。
+`--timeout-ms` 覆盖本次执行时限，范围与配置中的 `timeoutMs` 相同。`--json` 可查看完整 prompt、执行参数和输入哈希。`plan` 只读项目输入，不执行 CLI、读取 API key 或 Hub 设备令牌、创建运行目录或修改项目；启用项目 Hub 时只包含无令牌的连接请求描述。
 
 ## 执行范围
 
 运行的 cwd 是实际项目根目录。Agent 直接读写本项目，权限由所选 CLI 按 `harness.permission` 实施。输入哈希用于记录当次读取内容；本项目不创建 staging 工作区，也不把输入列表当作文件访问沙箱或冻结快照。
 
-runtime 默认收紧自动技能发现。需要技能时可用 `--skill` 明确传入；Claude Code 的 `claude-config` 和 DeepSeek Harness 可通过 `contextMode: project` 使用其支持的项目上下文。外部 CLI 不继承发起方的对话、附件、已连接 MCP 工具或插件能力；需要的资料应作为项目文件传入，工具需在所用执行环境中另行提供。
+runtime 默认收紧自动技能发现。需要技能时可用 `--skill` 明确传入；Claude Code 的 `claude-config` 和 DeepSeek Harness 可通过 `contextMode: project` 使用其支持的项目上下文。外部 CLI 不继承发起方的对话、附件、已连接 MCP 工具或插件能力；需要的资料应作为项目文件传入。MCP 默认关闭，仅在 `mcp.projectHub: true` 时由包装层提供当前项目的 `comfy-hub`，不导入其他全局或项目 MCP。
 
 任务提示要求保留已有制作、草稿和交付版本，但这是一条提示约定，不是文件覆盖保护。包装层不会在成功后自动导入产物、发布、重试或恢复任务；任务本身仍按用户指令执行。
 

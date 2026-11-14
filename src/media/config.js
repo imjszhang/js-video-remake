@@ -16,6 +16,7 @@ import fasterWhisper from './providers/faster-whisper.js';
 import azureSpeech from './providers/azure-speech.js';
 import qwenTts from './providers/qwen-tts.js';
 import macosSay from './providers/macos-say.js';
+import { parseHubUrl } from './mcp-hub.js';
 
 // Registered providers per task. Add a module under providers/ and list it here.
 export const PROVIDERS = {
@@ -41,6 +42,10 @@ const invalid = (message) => appError('CONFIG_INVALID', message);
 function fieldValue(type, value, name, workspace) {
     if (typeof value !== 'string' || !value.trim()) throw invalid(`${name} must be a nonempty string.`);
     const trimmed = value.trim();
+    if (type === 'mcp-url') {
+        try { return parseHubUrl(trimmed).url; }
+        catch { throw invalid(`${name} 必须是无凭据、查询参数及片段的 HTTP(S) /mcp/<服务ID> 专用入口。`); }
+    }
     if (type === 'path' || (type === 'executable' && /[/\\]/.test(trimmed))) {
         return trimmed.startsWith('~/') ? path.join(os.homedir(), trimmed.slice(2)) : path.resolve(workspace, trimmed);
     }

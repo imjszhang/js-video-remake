@@ -42,6 +42,7 @@ test('loads strict runtime targets, defaults timeout and keeps omitted enabled f
     assert.equal(settings.configPath, configPath);
     assert.equal(settings.defaultTarget, 'codex-api');
     assert.equal(settings.timeoutMs, 600_000);
+    assert.deepEqual(settings.mcp, { projectHub: false });
     assert.deepEqual(settings.targets, [{ ...target(), enabled: false }]);
     const selected = selectAgentTarget(settings);
     assert.equal(selected.enabled, false);
@@ -49,6 +50,18 @@ test('loads strict runtime targets, defaults timeout and keeps omitted enabled f
     selected.target.backend.model = 'changed';
     assert.equal(settings.targets[0].backend.model, 'test-model');
     await assert.rejects(fs.stat(f.env.VIDEO_REMAKE_AGENT_HOME), { code: 'ENOENT' });
+});
+
+test('MCP configuration is explicit and rejects unknown fields or non-boolean enablement', async (t) => {
+    const f = await fixture(t);
+    for (const mcp of [null, [], 'true', { projectHub: 'true' }, { projectHub: 1 }, { projectHub: true, servers: [] }]) {
+        await f.write({ schemaVersion: 1, targets: [target()], mcp });
+        await assert.rejects(loadAgentConfig(f.config), isInvalid(/object|Unknown|boolean/));
+    }
+    for (const mcp of [{}, { projectHub: false }, { projectHub: true }]) {
+        await f.write({ schemaVersion: 1, targets: [target()], mcp });
+        assert.deepEqual((await loadAgentConfig(f.config)).mcp, { projectHub: mcp.projectHub ?? false });
+    }
 });
 
 test('explicit configuration path takes priority over environment and workspace defaults', async (t) => {

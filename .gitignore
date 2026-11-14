@@ -6,6 +6,12 @@ agent-runtime.json
 !.env.example
 !.env.*.example
 *.local.json
+
+# Project-local MCP connections and device credentials.
+/.secrets/
+/.codex/config.toml
+/.mcp.json
+/.cursor/mcp.json
 # Video files stay local, including mixed-case extensions.
 *.[mM][pP]4
 *.[mM][kK][vV]

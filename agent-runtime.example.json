@@ -2,6 +2,9 @@
   "schemaVersion": 1,
   "defaultTarget": "deepseek-flash",
   "timeoutMs": 600000,
+  "mcp": {
+    "projectHub": false
+  },
   "targets": [
     {
       "name": "codex-native",

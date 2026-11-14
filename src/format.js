@@ -79,6 +79,7 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
             write(`目标: ${data.plan.target.name}${data.plan.enabled ? '' : '（已禁用）'}`);
             write(`工作区: ${data.plan.workspace}`);
             write(`权限: ${data.plan.target.harness.permission}`);
+            if (data.plan.hubPlan) write(`MCP: ${data.plan.hubPlan.server.name}（${data.plan.hubPlan.server.enabledTools.length} 个工具；运行前检查连接）`);
             write(`计划: ${data.plan.execution.planHash}`);
             write(`任务: ${data.plan.instruction}`);
             for (const input of data.plan.inputs) write(`输入: ${input.path}  ${input.sha256}`);

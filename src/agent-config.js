@@ -92,8 +92,16 @@ export async function loadAgentConfig(config, { configPath, env = config.env || 
         throw invalid(`Cannot read or parse agent configuration: ${selectedPath}`);
     }
     object(raw, 'Agent configuration');
-    fields(raw, ['schemaVersion', 'defaultTarget', 'timeoutMs', 'targets'], 'agent configuration');
+    fields(raw, ['schemaVersion', 'defaultTarget', 'timeoutMs', 'targets', 'mcp'], 'agent configuration');
     if (raw.schemaVersion !== 1) throw invalid('Agent configuration schemaVersion must be 1.');
+    if (raw.mcp !== undefined) {
+        object(raw.mcp, 'Agent mcp');
+        fields(raw.mcp, ['projectHub'], 'agent mcp');
+        if (raw.mcp.projectHub !== undefined && typeof raw.mcp.projectHub !== 'boolean') {
+            throw invalid('Agent mcp.projectHub must be a boolean.');
+        }
+    }
+    const mcp = { projectHub: raw.mcp?.projectHub ?? false };
     const timeoutMs = raw.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : raw.timeoutMs;
     if (typeof timeoutMs !== 'number' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > MAX_TIMEOUT_MS) {
         throw invalid(`Agent timeoutMs must be an integer between 1000 and ${MAX_TIMEOUT_MS}.`);
@@ -126,7 +134,7 @@ export async function loadAgentConfig(config, { configPath, env = config.env || 
     if (raw.defaultTarget !== undefined && !names.has(raw.defaultTarget)) {
         throw invalid(`defaultTarget does not exist: ${raw.defaultTarget}`);
     }
-    return { configPath: selectedPath, defaultTarget: raw.defaultTarget, timeoutMs, targets };
+    return { configPath: selectedPath, defaultTarget: raw.defaultTarget, timeoutMs, mcp, targets };
 }
 
 export function selectAgentTarget(settings, name, { requireEnabled = false } = {}) {

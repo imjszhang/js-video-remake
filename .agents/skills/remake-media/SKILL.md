@@ -30,9 +30,9 @@ node cli/remake.js media:doctor
 
 图片还可显式选择 [openai-image](providers/openai-image.md)、[gemini-image](providers/gemini-image.md)、[aliyun-image](providers/aliyun-image.md)、[comfyui-image](providers/comfyui-image.md)。按对应指南配置，生成前仍需授权；新适配器的 doctor 仅本地检查，不确认云端额度或 ComfyUI 运行状态。
 
-视频默认保留 `comfy-mcp`。新增 [aliyun-video](providers/aliyun-video.md)、[runway-video](providers/runway-video.md)、[minimax-video](providers/minimax-video.md)，通过 `media:video --request <需求.json>` 执行文生或单张首帧图生视频；`--task-id` 只继续查询/下载。实际执行仍需当前任务的生成授权；新适配器 doctor 不调用服务。
+视频默认保留 `comfy-mcp`。可配置 `media.video.hubUrl` / `hubTokenFile` 经 MCP Hub 连接，Agent 直接调用 MCP 工具。直接客户端使用已注册连接；`agent:run` 需在 `agent-runtime.json` 显式设置 `mcp.projectHub: true`，只加载项目的 `comfy-hub`，不继承全局 MCP，也不依赖客户端注册文件。Hub 的素材与任务 ID、下载落地方式见 [ComfyUI 指南](providers/comfy-mcp.md)，不套用直连的本机路径参数。新增 [aliyun-video](providers/aliyun-video.md)、[runway-video](providers/runway-video.md)、[minimax-video](providers/minimax-video.md)，通过 `media:video --request <需求.json>` 执行文生或单张首帧图生视频；`--task-id` 只继续查询/下载。实际执行仍需当前任务的生成授权；新增的三套 API 适配器 doctor 不调用服务。
 
-语音合成默认是 `macos-say`（[指南](providers/macos-say.md)），只用 macOS 系统音色。可选 [qwen-tts](providers/qwen-tts.md)：需要参考 WAV 和这段参考音频里的原话，向配置的 HTTP 接口提交后取回 WAV。实际合成仍需当前任务授权。模板工作台的「根据字幕生成口播」不走这个 provider。
+语音合成默认是 `macos-say`（[指南](providers/macos-say.md)），只用 macOS 系统音色。可选 [qwen-tts](providers/qwen-tts.md)：需要参考 WAV 和这段参考音频里的原话，向配置的 HTTP 接口提交后取回 WAV。实际合成仍需当前任务授权。模板工作台的「根据字幕生成口播」使用当前选中的语音 provider：`qwen-tts` 在页面收集参考音频和原话，再逐句对齐字幕时间。
 
 转写默认保留 `mlx-whisper`。可选 [aliyun-asr](providers/aliyun-asr.md)、[faster-whisper](providers/faster-whisper.md)、[azure-speech](providers/azure-speech.md)，都通过同一个 `media:transcribe` 入口交付字幕来源 JSON。按当前选择的指南核对语言、部署和认证；本地检查通过不等于模型已缓存、云端权限或额度可用。不自动切换 provider、下载模型或重试收费任务。
 
@@ -77,6 +77,7 @@ node cli/remake.js media:land <slug> --kind image|video|audio \
 ## 执行边界
 
 - 实际工具名、参数和长任务查询方式按所选指南及当前工具 schema，不编造缺失的连接或接口。
+- `agent:run` 的 MCP 默认关闭；显式开启项目 Hub 后，`read-only` 目标只提供 9 个查询工具，其他任务权限最多 17 个，仍受设备令牌权限限制。缺少生成工具时先检查任务与设备授权，不擅自扩大权限或换连接。
 - 长任务超时不等于失败；优先查询已有任务，避免重复生成和重复扣费。
 - 安装依赖、额外付费等超出当前授权范围的操作先确认。本机路径、地址和凭据只放在本地配置。
 - 默认 comfy-mcp 保留 Agent 执行方式；其他程序视频适配器通过 media:video 调用。没有统一后台任务队列，超时后按已取得的任务 ID 继续查询，不重复生成。

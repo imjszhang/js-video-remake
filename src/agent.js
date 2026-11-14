@@ -8,6 +8,7 @@ import { readCatalog, findProduction, findReference } from './catalog.js';
 import { assertSlug } from './schema.js';
 import { appError } from './errors.js';
 import { agentCredentialEnvironment } from './agent-credentials.js';
+import { planAgentHub, loadAgentHub, AGENT_HUB_TOKEN_REF } from './agent-hub.js';
 
 const ACTIVE = new Set(['preparing', 'running']);
 const MAX_INPUT_BYTES = 256 * 1024;
@@ -49,9 +50,12 @@ async function safePath(root, relative, { optional = false } = {}) {
     return absolute;
 }
 
-async function inputFile(root, relative, optional = false) {
-    if (typeof relative !== 'string' || relative.split(/[\\/]/).some(part =>
-        /^\.env(?:\.|$)/i.test(part) || ['.git', 'node_modules', 'auth.json', 'credentials.json', 'agent-runtime.json', 'video-remake.json'].includes(part))) {
+async function inputFile(root, relative, optional = false, privateFiles = []) {
+    const parts = typeof relative === 'string' ? relative.toLowerCase().split(/[\\/]/) : [];
+    const resolved = typeof relative === 'string' ? path.resolve(root, relative) : '';
+    if (typeof relative !== 'string' || parts.some(part =>
+        /^\.env(?:\.|$)/i.test(part) || ['.git', 'node_modules', '.secrets', '.mcp', '.mcp.json', '.codex', '.codexconfig', '.cursor', '.claude', 'auth.json', 'credentials.json', 'agent-runtime.json', 'video-remake.json'].includes(part))
+        || privateFiles.some(file => file && resolved.toLowerCase() === path.resolve(root, file).toLowerCase())) {
         throw appError('INVALID_INPUT', '不能将凭据、本机配置或依赖目录作为 Agent 输入。');
     }
     const file = await safePath(root, relative, { optional });
@@ -85,12 +89,14 @@ async function buildPlan(config, options, runId = 'preview') {
     const settings = await loadAgentConfig(config, { configPath: options.agentConfig });
     const { target, enabled } = selectAgentTarget(settings, options.target);
     const root = await fs.realpath(config.workspace);
+    const hubPlan = await planAgentHub(config, settings.mcp, target);
+    const privateFiles = [settings.configPath, hubPlan?.tokenFile || config.media?.video?.settings?.hubTokenFile];
     if ((options.instruction !== undefined) === (options.instructionFile !== undefined)) {
         throw appError('INVALID_INPUT', '请指定 --instruction 或 --instruction-file，二选一。');
     }
     const files = new Map();
     const add = async (relative, optional = false) => {
-        const input = await inputFile(root, relative, optional);
+        const input = await inputFile(root, relative, optional, privateFiles);
         if (input) files.set(input.path, input);
         return input;
     };
@@ -127,14 +133,20 @@ async function buildPlan(config, options, runId = 'preview') {
         '参考原片通过 SOURCE.json 指针读取；不要复制原片。成片和对比片使用本机 HyperFrames。',
         '保留已有制作、草稿和交付版本；不因执行成功自动定稿、发布或发送消息。',
         '如缺少工具、素材或证据，请明确报告。完成时说明修改、验证结果和未完成事项。',
+        hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接和授权由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会自动读取项目设置。' : '',
         production ? `本次制作: ${production}` : '',
         ...[...files.values()].map(file => `\n--- 项目输入 ${file.path} (sha256:${file.sha256}) ---\n${file.content}\n--- 输入结束 ---`),
         `\n用户任务:\n${instruction.trim()}`,
     ].filter(Boolean).join('\n');
+    if (/mcp_hub_[A-Za-z0-9_-]{32,128}/u.test(prompt)) {
+        throw appError('INVALID_INPUT', 'Agent 任务或输入中包含 Hub 设备令牌，请移除凭据后重试。');
+    }
     const timeoutMs = timeout(options.timeoutMs, settings.timeoutMs);
     let execution;
     try {
-        execution = runtime.plan({ runId, workspace: root, prompt, target, timeoutMs });
+        execution = runtime.plan({ runId, workspace: root, prompt, target, timeoutMs,
+            ...(hubPlan ? { mcpServers: [hubPlan.server] } : {}),
+        });
     } catch (error) { throw appError('CONFIG_INVALID', error.message); }
     // Validate storage without creating it, including for a dry plan.
     const storageRoot = agentStorageRoot({ ...config, workspace: root });
@@ -142,6 +154,7 @@ async function buildPlan(config, options, runId = 'preview') {
         schemaVersion: 1, workspace: root, production, target, enabled,
         configPath: settings.configPath, storageRoot, instruction,
         inputs: [...files.values()].map(({ content, ...input }) => input), execution,
+        ...(hubPlan ? { hubPlan } : {}),
     };
 }
 
@@ -251,11 +264,18 @@ async function runAgent(config, options, deps) {
             });
         }, 100);
         timer.unref();
+        const hub = await loadAgentHub(task.hubPlan, { fetchImpl: deps.fetchImpl, signal: controller.signal });
+        if (hub) {
+            redactor.add(hub.token);
+            record.mcp = hub.summary;
+        }
         record.status = 'running';
         await save();
         record.execution = await runtime.run(task.execution, {
             signal: controller.signal, runDir: path.join(runDir, 'runtime'),
-            env: operationalEnv(env), resolveCredential: ref => env[ref], onEvent: deps.onEvent,
+            env: operationalEnv(env),
+            resolveCredential: ref => hub && ref === AGENT_HUB_TOKEN_REF ? hub.token : env[ref],
+            onEvent: deps.onEvent ? event => deps.onEvent(redactor.value(event)) : undefined,
         });
         record.status = record.execution.status;
         record.finishedAt = record.execution.finishedAt;
@@ -315,12 +335,25 @@ export async function executeAgent(config, action, options = {}, deps = {}) {
         const settings = await loadAgentConfig(config, { configPath: options.agentConfig });
         const { target, enabled } = selectAgentTarget(settings, options.target);
         const env = await agentCredentialEnvironment(config, target);
-        const execution = runtime.plan({ runId: 'doctor', workspace: await fs.realpath(config.workspace), prompt: 'Check CLI metadata only.', target, timeoutMs: settings.timeoutMs });
+        const hubPlan = await planAgentHub(config, settings.mcp, target);
+        const execution = runtime.plan({ runId: 'doctor', workspace: await fs.realpath(config.workspace), prompt: 'Check CLI metadata only.', target, timeoutMs: settings.timeoutMs,
+            ...(hubPlan ? { mcpServers: [hubPlan.server] } : {}),
+        });
         const readiness = await runtime.probe(execution, { checkExecutable: true, checkLogin: !!options.checkLogin, env: operationalEnv(env), signal: deps.signal });
         if (target.backend.auth === 'api-key') {
             const present = typeof env[target.backend.apiKeyEnv] === 'string' && !!env[target.backend.apiKeyEnv].trim();
             readiness.checks.push({ name: 'credential', status: present ? 'passed' : 'failed', message: `${target.backend.apiKeyEnv}: ${present ? '已设置' : '未设置'}` });
             readiness.ok &&= present;
+        }
+        if (hubPlan) {
+            try {
+                const hub = await loadAgentHub(hubPlan, { fetchImpl: deps.fetchImpl, signal: deps.signal });
+                readiness.checks.push({ name: 'mcp-hub', status: 'passed', message: `comfy-hub 已就绪，${hub.summary.tools} 个授权工具 / ComfyUI ${hub.summary.version || '可用'}` });
+                readiness.mcp = hub.summary;
+            } catch (error) {
+                readiness.checks.push({ name: 'mcp-hub', status: 'failed', message: error.message });
+                readiness.ok = false;
+            }
         }
         const data = { command: 'agent:doctor', target: target.name, enabled, readiness };
         if (!readiness.ok) throw appError('AGENT_NOT_READY', 'Agent 检查未通过。', { data });
