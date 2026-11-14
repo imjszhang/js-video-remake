@@ -20,4 +20,4 @@ node cli/remake.js media:speech --text "要念的台词" --voice Tingting --out 
 
 台词为 1–2000 个字符。不要同时提供 `--reference` 或 `--reference-text`。输出必须是 `.wav`。登记方式与其他语音结果相同，来源名是 `macos-say.speak`。
 
-模板工作台里按字幕时间轴生成整段口播的功能不走这个 provider，它仍使用自己的系统语音流程。
+模板工作台在 `media.speech.provider` 为 `macos-say` 时，用这个 provider 按字幕时间轴生成整段口播。选中 `qwen-tts` 后，模板口播不再调用系统语音。

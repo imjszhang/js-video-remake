@@ -248,9 +248,12 @@ async function startAction(context, action) {
     try {
         if (!context.data.frozen && action !== 'generate') await save(context);
         if (action === 'voice') {
-            payload.voice = context.speechSelection?.voice;
             payload.language = context.speechSelection?.language || 'zh';
             payload.revision = context.captionDraft?.data?.revision;
+            if (context.speechSelection?.referenceRequired) {
+                payload.reference = context.speechSelection.reference;
+                payload.referenceText = context.speechSelection.referenceText;
+            } else payload.voice = context.speechSelection?.voice;
         }
         const job = await mutate(context, 'jobs', payload);
         if (!active(context)) return;

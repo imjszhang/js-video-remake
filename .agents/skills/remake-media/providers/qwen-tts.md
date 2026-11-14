@@ -55,3 +55,4 @@ node cli/remake.js media:land <slug> --kind audio --from speech.wav --intent "�
 - 不要把系统音色名称传给这个 provider。
 - 不要在未获授权时合成。doctor 通过不等于已经可以消耗服务额度。
 - 选中本 provider 时不要改去调用 `macos-say`。
+- 模板工作台「根据字幕生成口播」在选中本 provider 时走这里：页面上传参考音频和原话，服务逐句返回 WAV，再按字幕时间窗对齐。不要在这条路径上改用系统音色。

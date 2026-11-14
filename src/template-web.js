@@ -164,8 +164,9 @@ export function createTemplateController({ root, deps = {}, sendAsset }) {
             try { await persist(job, options); }
             catch (error) { active.delete(entry.key); jobs.delete(job.id); throw error; }
             entry.promise = (async () => {
+                let completion;
                 try {
-                    const result = await runTemplateAction(config, { ...options, action: body.action, at: body.at, title: body.title, style: body.style, prompt: body.prompt, subtitleScript: body.subtitleScript, target: body.target, providerTarget: body.providerTarget, model: body.model, mode: body.mode, voice: body.voice, language: body.language, revision: body.revision }, {
+                    const result = await runTemplateAction(config, { ...options, action: body.action, at: body.at, title: body.title, style: body.style, prompt: body.prompt, subtitleScript: body.subtitleScript, target: body.target, providerTarget: body.providerTarget, model: body.model, mode: body.mode, voice: body.voice, language: body.language, revision: body.revision, reference: body.reference, referenceText: body.referenceText }, {
                         ...deps, signal: abort.signal,
                         onAgentEvent: async event => {
                             const line = eventLog(event);
@@ -178,21 +179,22 @@ export function createTemplateController({ root, deps = {}, sendAsset }) {
                             await persist(job, options);
                         },
                     });
-                    job.result = result;
                     // A completed registration/fork has committed its result. Cancellation
                     // cannot retroactively turn that successful commit into a cancelled job.
-                    job.status = 'succeeded';
-                    job.message = '已完成';
+                    completion = { result, status: 'succeeded', message: '已完成' };
                 } catch (error) {
-                    job.status = abort.signal.aborted ? 'cancelled' : 'failed';
-                    job.error = error.message; job.message = job.status === 'cancelled' ? '任务已取消' : error.message;
-                    job.report = error.data?.report || error.report || null;
-                    if (error.data?.agentRunId) job.agentRunId = error.data.agentRunId;
+                    const status = abort.signal.aborted ? 'cancelled' : 'failed';
+                    completion = { status, error: error.message, message: status === 'cancelled' ? '任务已取消' : error.message,
+                        report: error.data?.report || error.report || null,
+                        ...(error.data?.agentRunId ? { agentRunId: error.data.agentRunId } : {}) };
                 } finally {
-                    job.finishedAt = new Date().toISOString();
-                    appendJobLog(job, { kind: job.status === 'failed' ? 'error' : 'status', text: job.message });
-                    try { await persist(job, options); }
-                    catch { job.error ||= '任务已结束，但状态未能保存。'; }
+                    const finished = { ...job, ...completion, logs: [...(job.logs || [])], finishedAt: new Date().toISOString() };
+                    appendJobLog(finished, { kind: finished.status === 'failed' ? 'error' : 'status', text: finished.message });
+                    try { await persist(finished, options); }
+                    catch { finished.error ||= '任务已结束，但状态未能保存。'; }
+                    // A visible terminal state must mean the package can accept new work.
+                    // Keep the running object unchanged during asynchronous persistence.
+                    Object.assign(job, finished);
                     active.delete(entry.key);
                 }
             })();

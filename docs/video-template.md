@@ -240,13 +240,13 @@ Provider 表单支持“测试连接”和“获取模型列表”，填写接�
 
 ### 根据字幕生成口播
 
-「填写素材」的字幕编辑下方提供「根据字幕生成口播」。选择中文或英文和本机音色，点击「保存字幕并生成口播」，会先保存当前字幕与个人信息，再在后台生成全片音轨；完成后自动填入口播素材，可直接试听、下载或继续合成。不需要自行录音，原有上传录音入口仍保留。当前使用 macOS 系统语音，需要 FFmpeg / ffprobe，无需 API Key；[语音与时间对齐说明](template-speech.md)。命令行若已用 `voice:save` 保存自己的音色，并用 `qwen-tts` 作为语音合成，可以改用 `template:voice` 按同一份字幕念稿；网页按钮不会使用那段录音。
+「填写素材」的字幕编辑下方提供「根据字幕生成口播」。选择中文或英文后点击「保存字幕并生成口播」，会先保存当前字幕与个人信息，再在后台生成全片音轨；完成后自动填入口播素材，可直接试听、下载或继续合成。当前语音工具由 `media.speech` 决定：`macos-say` 选择本机音色；`qwen-tts` 改为上传 1–30 秒参考音频，并填写这段音频里的原话。原有上传整段录音的入口仍保留。需要 FFmpeg / ffprobe；[语音与时间对齐说明](template-speech.md)。
 
 声音逐句对齐原字幕时间，保留开头、句间和结尾的空白。试听默认跳到第一句，下载的音频仍与全片等长。句子过长会适度加速，超过上限会明确提示缩短哪句；不会截掉整句或悄悄改字幕。再次修改字幕或个人信息，会提示旧口播需要重新生成。
 
 生成与其他模板操作共用异步任务及取消机制，刷新或关网页不会中止，关闭本地服务会中止。失败或取消保留此前的口播，只有成功才替换当前设置。已合成版本需先复制成新版本。
 
-接口：`GET /voice` 获取音色、可用状态及当前口播（含 `stale`）；`POST /jobs` 使用 `{action:"voice", voice:"音色 ID", language:"zh"}`，可带字幕 `revision` 防止使用过期稿；`GET/HEAD /voice/audio` 播放当前口播（支持 Range），加 `?download=1` 下载。路径均位于同一模板 API 下，音频与生成记录保存在该包的 `inputs/uploads/`，沿用模板的个人素材排除规则。
+接口：`GET /voice` 获取当前语音工具、可用状态及当前口播（含 `stale`）。`macos-say` 还返回音色列表；`qwen-tts` 返回 `referenceRequired: true`。`POST /jobs` 使用 `{action:"voice", language:"zh", voice:"音色 ID"}`，或在克隆时使用 `{action:"voice", language:"zh", reference:"inputs/uploads/voice-….wav", referenceText:"参考原话"}`。可带字幕 `revision` 防止使用过期稿。`GET/HEAD /voice/audio` 播放当前口播（支持 Range），加 `?download=1` 下载。路径均位于同一模板 API 下。参考音频先按口播素材上传，生成结果和记录保存在该包的 `inputs/uploads/`，沿用模板的个人素材排除规则。
 
 ### 导出提词稿
 

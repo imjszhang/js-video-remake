@@ -15,10 +15,39 @@ export function mountVoiceEditor(parent, context, { request, onGenerate, fallbac
         const option = el('option', '', label); option.value = value; language.append(option);
     }
     const voice = el('select'); voice.setAttribute('aria-label', '口播音色');
+    const referenceFile = el('input'); referenceFile.type = 'file'; referenceFile.accept = 'audio/*,.wav'; referenceFile.setAttribute('aria-label', '参考音频');
+    const referenceText = el('textarea'); referenceText.rows = 2; referenceText.maxLength = 2000; referenceText.placeholder = '这段参考音频里实际说的话'; referenceText.setAttribute('aria-label', '参考音频原话');
     const label = (text, input) => { const node = el('label'); node.append(el('span', '', text), input); return node; };
+    const languageLabel = label('语言', language);
+    const voiceLabel = label('音色', voice);
+    const referenceFileLabel = label('参考音频', referenceFile);
+    const referenceTextLabel = label('参考原话', referenceText);
+    referenceFileLabel.hidden = true; referenceTextLabel.hidden = true;
     const generate = el('button', 'download-link', '保存字幕并生成口播'); generate.type = 'button';
-    generate.addEventListener('click', onGenerate);
-    controls.append(el('legend', 'sr-only', '语音生成设置'), label('语言', language), label('音色', voice), generate);
+    let uploading = false;
+    generate.addEventListener('click', async () => {
+        if (uploading) return;
+        if (data?.referenceRequired) {
+            const file = referenceFile.files?.[0];
+            const text = referenceText.value.trim();
+            if (!file || !text) { state.textContent = '请选择 1–30 秒的参考音频，并填写其中的原话。'; return; }
+            if (file.size > 12 * 1024 * 1024) { state.textContent = '参考音频不能超过 12 MiB。'; return; }
+            uploading = true; update();
+            let uploadError;
+            try {
+                const params = new URLSearchParams({ kind: 'voice', filename: file.name || 'reference.wav' });
+                const uploaded = await request(`${context.base}/assets?${params}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Remake-Action': 'template' }, body: file,
+                });
+                context.speechSelection = { referenceRequired: true, reference: uploaded.path, referenceText: text, language: language.value };
+            } catch (error) {
+                uploadError = error;
+            } finally { uploading = false; update(); }
+            if (uploadError) { state.textContent = uploadError.message; return; }
+        }
+        onGenerate();
+    });
+    controls.append(el('legend', 'sr-only', '语音生成设置'), languageLabel, voiceLabel, referenceFileLabel, referenceTextLabel, generate);
     const state = el('p', 'voice-status'); state.setAttribute('role', 'status'); state.setAttribute('aria-live', 'polite');
     const output = el('div', 'voice-output');
     const uploadControls = el('fieldset', 'editor-fields'); uploadControls.append(fallback);
@@ -26,8 +55,16 @@ export function mountVoiceEditor(parent, context, { request, onGenerate, fallbac
     panel.append(provider, controls, state, output, upload); parent.append(panel);
     let data = null, loading = true;
     const alive = () => panel.isConnected;
-    function remember() { context.speechSelection = { voice: voice.value, language: language.value }; }
+    function remember() {
+        context.speechSelection = data?.referenceRequired
+            ? { referenceRequired: true, referenceText: referenceText.value, language: language.value, reference: context.speechSelection?.reference }
+            : { voice: voice.value, language: language.value };
+    }
     function fillVoices() {
+        voiceLabel.hidden = Boolean(data?.referenceRequired);
+        referenceFileLabel.hidden = !data?.referenceRequired;
+        referenceTextLabel.hidden = !data?.referenceRequired;
+        if (data?.referenceRequired) { remember(); update(); return; }
         const preferred = context.speechSelection?.voice || data?.audio?.voice || data?.defaultVoice;
         voice.replaceChildren();
         const matches = (data?.voices || []).filter(item => String(item.language || '').startsWith(language.value));
@@ -38,12 +75,17 @@ export function mountVoiceEditor(parent, context, { request, onGenerate, fallbac
     }
     language.addEventListener('change', fillVoices);
     voice.addEventListener('change', remember);
+    referenceText.addEventListener('input', () => { remember(); update(); });
+    referenceFile.addEventListener('change', update);
     function update() {
-        const busy = context.pending || context.job?.status === 'running';
+        const busy = context.pending || context.job?.status === 'running' || uploading;
         uploadControls.disabled = busy || context.data.frozen;
-        controls.disabled = loading || busy || context.data.frozen || !data?.available || !data?.supported || !voice.value;
+        const ready = data?.referenceRequired ? Boolean(referenceFile.files?.[0] && referenceText.value.trim()) : Boolean(voice.value);
+        controls.disabled = loading || busy || context.data.frozen || !data?.available || !data?.supported;
+        generate.disabled = controls.disabled || !ready;
         const running = context.job?.action === 'voice' && context.job.status === 'running';
-        if (running) state.textContent = context.job.message || '正在生成口播…';
+        if (uploading) state.textContent = '正在上传参考音频…';
+        else if (running) state.textContent = context.job.message || '正在生成口播…';
         else if (context.job?.action === 'voice' && context.job.status === 'failed') state.textContent = context.job.error || '生成失败，请重试。';
         else if (context.data.frozen) state.textContent = '这个版本已合成。复制为新版本后可修改字幕、重新生成口播。';
         else if (context.dirty) state.textContent = '有尚未保存的内容；点击生成会先保存当前字幕与素材设置。';
@@ -58,7 +100,9 @@ export function mountVoiceEditor(parent, context, { request, onGenerate, fallbac
             if (!alive()) return;
             data = result;
             provider.textContent = data.available && data.supported
-                ? `${data.label} · 本机生成，无需 API Key。英文为空的句子保留静音。`
+                ? (data.referenceRequired
+                    ? `${data.label}。上传 1–30 秒参考音频和其中的原话，按这个音色逐句生成并对齐字幕时间。所选语言里空着的句子保持静音。`
+                    : `${data.label} · 本机生成，无需 API Key。所选语言里空着的句子保持静音。`)
                 : data.reason || '当前暂时无法生成语音。';
             language.value = context.speechSelection?.language || data.audio?.language || 'zh';
             fillVoices(); output.replaceChildren();

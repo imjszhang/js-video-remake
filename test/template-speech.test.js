@@ -116,6 +116,49 @@ test('saved voice speaks each caption without the system voice and keeps the tim
     assert.equal(await fs.readFile(f.outputFile, 'utf8'), 'fixture wav');
 });
 
+function pcmWav(seconds = 1.5, rate = 16000) {
+    const data = Buffer.alloc(Math.floor(seconds * rate) * 2);
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0); header.writeUInt32LE(36 + data.length, 4); header.write('WAVE', 8);
+    header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+    header.write('data', 36); header.writeUInt32LE(data.length, 40);
+    return Buffer.concat([header, data]);
+}
+
+test('qwen-tts clones each caption from the reference clip and keeps the subtitle timeline', async t => {
+    const f = await fixture(t);
+    const reference = path.join(f.config.workspace, 'reference.wav');
+    await fs.writeFile(reference, pcmWav());
+    const spoken = [];
+    f.deps.speechProvider = {
+        id: 'qwen-tts', label: 'Qwen3 TTS（参考音频克隆，WAV）',
+        doctor: async () => ({ ready: true, version: 'qwen3-tts' }),
+        synthesize: async (_settings, request) => {
+            spoken.push({ text: request.text, reference: request.reference, referenceText: request.referenceText, language: request.language });
+            await fs.writeFile(request.outPath, 'sentence wav');
+            return { path: request.outPath, provider: 'qwen-tts.speak' };
+        },
+    };
+    f.deps.platform = 'linux';
+    const options = await speechOptions(f.config, f.deps);
+    assert.equal(options.available, true);
+    assert.equal(options.referenceRequired, true);
+    assert.equal(options.provider, 'qwen-tts');
+    const result = await synthesizeCaptionSpeech(f.config, {
+        rows, identity: { name: '小张' }, duration: 8, outputFile: f.outputFile, reference, referenceText: '参考原话',
+    }, f.deps);
+    assert.equal(result.provider, 'qwen-tts');
+    assert.equal(result.voice, 'qwen3-tts');
+    assert.equal(result.count, 2);
+    assert.deepEqual(spoken.map(item => item.language), ['Chinese', 'Chinese']);
+    assert.deepEqual(spoken.map(item => item.text), ['我是小张。', '第二句。']);
+    assert.ok(spoken.every(item => item.reference === reference && item.referenceText === '参考原话'));
+    assert.ok(!f.state.calls.some(call => call.executable === '/usr/bin/say' && call.args.includes('-f')));
+    assert.equal(f.state.timeline.length, 8 * 48000 * 2);
+    await assert.rejects(synthesizeCaptionSpeech(f.config, { rows, identity: { name: '小张' }, duration: 8, outputFile: path.join(f.config.workspace, 'missing.wav') }, f.deps), /参考音频/);
+});
+
 test('cancellation cleans temporary speech data and existing outputs cannot be overwritten', async t => {
     const controller = new AbortController();
     const f = await fixture(t, { onCall: async (executable, args) => { if (executable === '/usr/bin/say' && args.includes('-f')) { controller.abort(); return { exitCode: null, termination: 'cancelled' }; } } });

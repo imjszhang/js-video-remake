@@ -166,6 +166,18 @@ test('failed or cancelled speech leaves previous voice and material settings int
     });
 });
 
+test('voice job resolves an uploaded reference clip and rejects paths outside the package', async t => {
+    const f = await fixture(t);
+    await f.write(path.join(f.dir, 'inputs/uploads/voice-ref.wav'), 'reference-audio');
+    const completed = await f.wait(await f.job({ reference: 'inputs/uploads/voice-ref.wav', referenceText: '参考原话' }));
+    assert.equal(completed.status, 'succeeded', completed.error);
+    assert.equal(f.calls[0].args.referenceText, '参考原话');
+    assert.ok(f.calls[0].args.reference.endsWith(`${path.sep}inputs${path.sep}uploads${path.sep}voice-ref.wav`));
+    const escaped = await f.wait(await f.job({ reference: 'inputs/uploads/../../secret.wav', referenceText: '不行' }));
+    assert.equal(escaped.status, 'failed');
+    assert.equal(f.calls.length, 1);
+});
+
 test('speech rejects frozen templates, cross-site requests and stale caption revisions', async t => {
     const f = await fixture(t);
     const original = await (await f.request('captions')).json();

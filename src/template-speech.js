@@ -2,11 +2,16 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { appError } from './errors.js';
+import { httpFetch } from './http.js';
+import { getProvider } from './media/config.js';
+import { pcmWavInfo } from './media/providers/qwen-tts.js';
 import { rendererEnvironment, runFixedCommand } from './repro/render.js';
 
 const RATE = 48000;
 const SAMPLE_BYTES = 2;
 const MAX_ACCELERATION = 3;
+const MAX_REFERENCE_BYTES = 12 * 1024 * 1024;
+const QWEN_LANGUAGE = { zh: 'Chinese', en: 'English' };
 const provider = 'macos-say';
 const label = 'macOS 系统语音（本机）';
 const fail = message => appError('VIDEO_SPEECH_INVALID', message);
@@ -29,7 +34,49 @@ async function command(config, executable, args, deps, timeoutMs = 120000) {
     return result;
 }
 
+function speechEngine(config, deps) {
+    const entry = config.media?.speech;
+    const id = deps.speechProvider?.id || entry?.provider || 'macos-say';
+    return { id, provider: deps.speechProvider || getProvider('speech', id), settings: entry?.settings || {} };
+}
+
+async function qwenSpeechOptions(config, engine, deps) {
+    const base = { provider: 'qwen-tts', label: engine.provider.label, referenceRequired: true, voices: [], defaultVoice: null };
+    try {
+        await Promise.all([
+            command(config, 'ffmpeg', ['-version'], deps, 15000),
+            command(config, 'ffprobe', ['-version'], deps, 15000),
+        ]);
+        const check = await engine.provider.doctor(engine.settings, { fetchImpl: httpFetch(config.proxy, deps.fetchImpl), env: config.env || process.env });
+        if (!check.ready) return { ...base, available: false, reason: check.hint || '语音合成服务未就绪。' };
+        return { ...base, available: true };
+    } catch (error) {
+        if (error.code === 'VIDEO_CANCELLED') throw error;
+        return { ...base, available: false, reason: error.message };
+    }
+}
+
+async function prepareReference(config, reference, temporary, deps) {
+    const bytes = await fs.readFile(reference).catch(() => { throw fail('参考音频不存在或无法读取。'); });
+    if (bytes.length > MAX_REFERENCE_BYTES) throw fail('参考音频不能超过 12 MiB。');
+    try {
+        pcmWavInfo(bytes);
+        return reference;
+    } catch {
+        const prepared = path.join(temporary, 'reference.wav');
+        await command(config, 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-i', reference, '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', prepared], deps);
+        const converted = await fs.readFile(prepared);
+        if (converted.length > MAX_REFERENCE_BYTES) throw fail('参考音频不能超过 12 MiB。');
+        try { pcmWavInfo(converted); }
+        catch (error) { throw fail(error.message || '参考音频必须是 1 到 30 秒的 16-bit PCM WAV。'); }
+        return prepared;
+    }
+}
+
 export async function speechOptions(config, deps = {}) {
+    const engine = speechEngine(config, deps);
+    if (engine.id === 'qwen-tts') return qwenSpeechOptions(config, engine, deps);
+    if (engine.id !== 'macos-say') return { provider: engine.id, label: engine.provider.label, available: false, voices: [], defaultVoice: null, reason: '模板口播目前支持 macOS 系统语音和 qwen-tts。' };
     if ((deps.platform || process.platform) !== 'darwin') return { provider, label, available: false, voices: [], defaultVoice: null, reason: '本机自动口播目前需要 macOS 系统语音。' };
     try {
         const [listed] = await Promise.all([
@@ -152,11 +199,37 @@ async function alignCaptionSpeech(config, { rows, speechRows, language, duration
     } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 }
 
-/** Host-owned output, never edits subtitle rows or the template source. Uses macOS system voices. */
+/** Host-owned output, never edits subtitle rows or the template source. Uses the configured speech provider. */
 export async function synthesizeCaptionSpeech(config, options = {}, deps = {}) {
     const { speechRows, language } = await prepareSpeechRows(options);
     const speech = await speechOptions(config, deps);
     if (!speech.available) throw fail(speech.reason);
+    if (speech.referenceRequired) {
+        const engine = speechEngine(config, deps);
+        const referenceText = typeof options.referenceText === 'string' ? options.referenceText.trim() : '';
+        if (typeof options.reference !== 'string' || !path.isAbsolute(options.reference)) throw fail('请先上传 1–30 秒的参考音频。');
+        if (!referenceText || [...referenceText].length > 2000) throw fail('参考音频里的原话需要是 1 到 2000 个字符。');
+        let preparedReference;
+        return alignCaptionSpeech(config, {
+            ...options, speechRows, language, provider: 'qwen-tts', label: speech.label, voice: engine.settings.model || 'qwen3-tts',
+            produce: async (row, index, temporary) => {
+                preparedReference ||= await prepareReference(config, options.reference, temporary, deps);
+                const audio = path.join(temporary, `sentence-${index}.wav`);
+                try {
+                    await engine.provider.synthesize(engine.settings, {
+                        text: row.text, reference: preparedReference, referenceText,
+                        language: QWEN_LANGUAGE[language], outPath: audio,
+                    }, { fetchImpl: httpFetch(config.proxy, deps.fetchImpl), signal: deps.signal });
+                } catch (error) {
+                    cancelled(deps.signal);
+                    if (error.code === 'VIDEO_CANCELLED') throw error;
+                    throw fail(`第 ${row.index + 1} 句语音合成失败：${error.message}`);
+                }
+                cancelled(deps.signal);
+                return audio;
+            },
+        }, deps);
+    }
     const selected = options.voice ? speech.voices.find(item => item.id === options.voice && item.language === language) : speech.voices.find(item => item.default && item.language === language);
     if (!selected) throw fail('所选音色不存在或与口播语言不一致，请重新选择。');
     return alignCaptionSpeech(config, {

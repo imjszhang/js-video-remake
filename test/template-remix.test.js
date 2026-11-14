@@ -157,7 +157,11 @@ test('web style writes obey origin and frozen protections while frozen remix/exp
 
 test('web style saves are blocked during template jobs and work after cancellation', async t => {
     const f = await fixture(t);
-    const api = await web(t, f, { runCommand: async (exe, args, options) => new Promise(resolve => options.signal.addEventListener('abort', () => resolve({ exitCode: null, termination: 'cancelled' }), { once: true })) });
+    const api = await web(t, f, { runCommand: async (exe, args, options) => new Promise(resolve => {
+        const cancelled = () => resolve({ exitCode: null, termination: 'cancelled' });
+        if (options.signal.aborted) cancelled();
+        else options.signal.addEventListener('abort', cancelled, { once: true });
+    }) });
     const response = await api.request('jobs', { method: 'POST', data: { action: 'check' } });
     const job = await response.json();
     assert.equal(response.status, 202);

@@ -145,6 +145,49 @@ test('running Agent generation locks mutations and cancellation removes incomple
     assert.equal((await api.request('inputs', { method: 'PUT', data: { inputs: {} } })).status, 200);
 });
 
+test('terminal job states are published only after persistence and package unlock', async t => {
+    for (const outcome of ['succeeded', 'failed', 'cancelled']) {
+        await t.test(outcome, { timeout: 5000 }, async t => {
+            const f = await fixture(t), deps = mocks();
+            if (outcome === 'failed') deps.executeAgent = async () => { throw new Error('fixture failed'); };
+            if (outcome === 'cancelled') deps.executeAgent = async (config, action, options, { signal }) => {
+                await new Promise(resolve => signal.aborted ? resolve() : signal.addEventListener('abort', resolve, { once: true }));
+                throw new Error('fixture cancelled');
+            };
+            let release, reached, intercepted = false;
+            const gate = new Promise(resolve => { release = resolve; });
+            const pending = new Promise(resolve => { reached = resolve; });
+            const originalRename = fs.rename;
+            const jobFile = path.join(await fs.realpath(f.root), 'productions/demo/drafts/.template-jobs/demo-v1.json');
+            t.mock.method(fs, 'rename', async (source, destination) => {
+                if (!intercepted && destination === jobFile) {
+                    const saved = JSON.parse(await fs.readFile(source, 'utf8'));
+                    if (['succeeded', 'failed', 'cancelled'].includes(saved.status)) {
+                        intercepted = true;
+                        reached();
+                        await gate;
+                    }
+                }
+                return originalRename(source, destination);
+            });
+            const api = await web(t, f, deps);
+            try {
+                const response = await api.request('jobs', { method: 'POST', data: requestBody });
+                assert.equal(response.status, 202);
+                const initial = await response.json();
+                if (outcome === 'cancelled') await api.request(`jobs/${initial.id}/cancel`, { method: 'POST', data: {} });
+                await pending;
+                const visible = await (await api.request(`jobs/${initial.id}`)).json();
+                assert.equal(visible.status, 'running', 'persisting a terminal snapshot must not publish it early');
+                assert.equal((await api.request('inputs', { method: 'PUT', data: { inputs: {} } })).status, 409);
+                release();
+                assert.equal((await api.wait(initial)).status, outcome);
+                assert.equal((await api.request('inputs', { method: 'PUT', data: { inputs: {} } })).status, 200);
+            } finally { release(); }
+        });
+    }
+});
+
 test('missing Agent configuration is visible while template inputs remain available', async t => {
     const f = await fixture(t, { configured: false }), api = await web(t, f);
     const response = await api.request('editor');

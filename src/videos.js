@@ -996,9 +996,15 @@ export async function getTemplateVoice(config, options = {}, deps = {}) {
     const { speechOptions } = await import('./template-speech.js');
     const engine = await (deps.speechOptions || speechOptions)(config, deps);
     const supported = Boolean(pkg.manifest.template.inputs?.voice) && captions.supported;
+    let audio = null;
+    try { audio = await templateVoiceState(pkg, captions, inputs); }
+    catch (error) {
+        // A stale voice path should not hide the generator. Saving new speech replaces it.
+        if (!['INVALID_INPUT', 'VIDEO_INVALID', 'NOT_FOUND'].includes(error.code)) throw error;
+    }
     return { ...engine, supported, frozen: captions.frozen, revision: captions.revision,
         ...(!supported ? { reason: captions.reason || '这个模板没有口播声音输入。' } : {}),
-        audio: await templateVoiceState(pkg, captions, inputs) };
+        audio };
 }
 
 /** Only serve the currently selected package-local media, never an arbitrary path. */
@@ -1013,7 +1019,7 @@ export async function getTemplateVoiceAsset(config, options = {}) {
     return { path: file, name: path.basename(file), type };
 }
 
-export async function generateTemplateVoice(config, { slug, name, voice, language = 'zh', revision } = {}, deps = {}) {
+export async function generateTemplateVoice(config, { slug, name, voice, language = 'zh', revision, reference, referenceText } = {}, deps = {}) {
     const pkg = await editorPackage(config, { slug, name });
     await editableTemplate(pkg);
     if (!pkg.manifest.template.inputs?.voice) throw invalid('这个模板没有口播声音输入。');
@@ -1022,6 +1028,11 @@ export async function generateTemplateVoice(config, { slug, name, voice, languag
     if (revision !== undefined && revision !== captions.revision) throw appError('TEMPLATE_CAPTIONS_CONFLICT', '字幕已更新，请重新读取后再生成口播。');
     const inputs = await validateEditorInputs(pkg, await editorInputs(pkg));
     const duration = pkg.manifest.frame.frames / pkg.manifest.frame.fps;
+    let referenceFile;
+    if (reference !== undefined && reference !== null && reference !== '') {
+        if (typeof reference !== 'string' || !reference.startsWith('inputs/uploads/')) throw invalid('参考音频必须是已上传到当前模板的文件。');
+        referenceFile = await editorFile(pkg, reference);
+    }
     const relative = `inputs/uploads/voice-${randomUUID()}.wav`;
     const outputFile = await editorFile(pkg, relative, { createParents: true });
     const metadataFile = `${outputFile}.json`;
@@ -1030,7 +1041,7 @@ export async function generateTemplateVoice(config, { slug, name, voice, languag
     try {
         cancelled(deps.signal);
         const result = await (deps.synthesizeCaptionSpeech || synthesizeCaptionSpeech)(config, {
-            rows: captions.rows, identity: inputs.identity || {}, voice, language, duration, outputFile,
+            rows: captions.rows, identity: inputs.identity || {}, voice, language, duration, outputFile, reference: referenceFile, referenceText,
         }, deps);
         cancelled(deps.signal);
         const stat = await fs.lstat(outputFile);
@@ -1200,7 +1211,7 @@ function cancelled(signal) {
     if (signal?.aborted) throw appError('VIDEO_CANCELLED', '操作已取消。');
 }
 
-export async function runTemplateAction(config, { slug, name, action, at, title, style, prompt, subtitleScript, target, providerTarget, model, mode, voice, language, revision } = {}, deps = {}) {
+export async function runTemplateAction(config, { slug, name, action, at, title, style, prompt, subtitleScript, target, providerTarget, model, mode, voice, language, revision, reference, referenceText } = {}, deps = {}) {
     if (!['prepare', 'check', 'preview', 'compose', 'fork', 'remix', 'export', 'generate', 'voice'].includes(action)) throw invalid('不支持的模板操作。');
     const pkg = await editorPackage(config, { slug, name });
     cancelled(deps.signal);
@@ -1208,7 +1219,7 @@ export async function runTemplateAction(config, { slug, name, action, at, title,
         const { generateTemplate } = await import('./template-agent.js');
         return generateTemplate(config, { slug, name, title, prompt, subtitleScript, target, providerTarget, model, mode }, deps);
     }
-    if (action === 'voice') return generateTemplateVoice(config, { slug, name, voice, language, revision }, deps);
+    if (action === 'voice') return generateTemplateVoice(config, { slug, name, voice, language, revision, reference, referenceText }, deps);
     if (action === 'remix') return remixTemplate(config, { slug, name, title, style, mode }, deps);
     if (action === 'export') {
         await deps.onProgress?.({ stage: 'export', message: '正在打包可复用模板' });

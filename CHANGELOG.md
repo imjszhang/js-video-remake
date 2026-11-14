@@ -6,6 +6,8 @@
 
 ### 新增
 
+- 模板网页口播支持按当前语音 provider 上传参考音频并逐句克隆，兼容命令行已保存音色；参考音频可自动转换，生成支持取消。旧口播文件失效时仍可打开生成入口，上传参考音频失败时显示具体错误。
+
 - 可以保存自己的音色样本，再按字幕用这个音色念稿。`remake voice:save --from 参考.wav --text "录音里的原话"` 把 16-bit PCM WAV 和原话记到本机 `voices/`，`voice:list` 只读查看。`media:speech` 在 provider 为 `qwen-tts` 且没有另传参考音频时使用默认音色。`remake template:voice <slug> --video <包名>` 按模板字幕逐句合成，对齐时间窗后写入该模板的口播。网页里的「根据字幕生成口播」仍使用 macOS 系统音色。样本和 `voices.json` 只留在本机。
 - 素材任务新增语音合成。默认 provider 是 `macos-say`，使用 macOS 系统音色；可选 `qwen-tts`，用参考 WAV 和对应台词克隆声音并返回 WAV。命令是 `remake media:speech`。
 - 项目可以配置 SOCKS5 代理：`video-remake.json` 的 `proxy` 或环境变量 `VIDEO_REMAKE_PROXY`。配置后，程序自己发出的非本机 HTTP(S) 请求经该代理连接，`localhost` 和 `127.0.0.1` 仍直连。MLX 健康检查在配置了密钥文件时会带上 `Authorization`。
