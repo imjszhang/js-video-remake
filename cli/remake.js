@@ -20,7 +20,7 @@ import { normalizeAsset } from '../src/normalize.js';
 import { studioProduction, timelineProduction } from '../src/studio.js';
 import { runDoctor } from '../src/doctor.js';
 import { appError } from '../src/errors.js';
-import { mediaDoctor, mediaPrepare, mediaImage, mediaVideo, mediaLand, mediaTranscribe } from '../src/media/index.js';
+import { mediaDoctor, mediaPrepare, mediaImage, mediaVideo, mediaLand, mediaSpeech, mediaTranscribe } from '../src/media/index.js';
 import { addVideoAsset, checkVideo, forkVideo, importVideo, listVideosCommand, newVideo, packVideo, renderVideo, unpackVideo, remixTemplate, getTemplatePromptScript } from '../src/videos.js';
 
 export async function execute(parsed, env = process.env, deps = {}) {
@@ -158,13 +158,14 @@ export async function execute(parsed, env = process.env, deps = {}) {
     }
     if (parsed.command.startsWith('media:')) {
         const action = parsed.command.slice('media:'.length);
-        const expected = ['doctor', 'prepare', 'image', 'video'].includes(action) ? 0 : 1;
+        const expected = ['doctor', 'prepare', 'image', 'video', 'speech'].includes(action) ? 0 : 1;
         if (parsed.positionals.length !== expected) throw appError('INVALID_INPUT', `${parsed.command} ${expected ? '需要一个制作 slug' : '不接受位置参数'}。`);
         const slug = parsed.positionals[0];
         if (action === 'doctor') return ok(await mediaDoctor(config, { task: parsed.flags.task }, deps));
         if (action === 'prepare') return ok(await mediaPrepare(config, { task: parsed.flags.task, request: parsed.flags.request }, deps));
         if (action === 'image') return ok(await mediaImage(config, parsed.flags, deps));
         if (action === 'video') return ok(await mediaVideo(config, parsed.flags, deps));
+        if (action === 'speech') return ok(await mediaSpeech(config, parsed.flags, deps));
         if (action === 'transcribe') {
             return ok(await mediaTranscribe(config, {
                 slug, from: parsed.flags.from, id: parsed.flags.id, language: parsed.flags.language, force: parsed.flags.force, require: parsed.flags.require,

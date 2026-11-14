@@ -6,6 +6,8 @@
 
 ### 新增
 
+- 素材任务新增语音合成。默认 provider 是 `macos-say`，使用 macOS 系统音色；可选 `qwen-tts`，用参考 WAV 和对应台词克隆声音并返回 WAV。命令是 `remake media:speech`。模板工作台的字幕口播仍走原来的系统语音。
+- 项目可以配置 SOCKS5 代理：`video-remake.json` 的 `proxy` 或环境变量 `VIDEO_REMAKE_PROXY`。配置后，程序自己发出的非本机 HTTP(S) 请求经该代理连接，`localhost` 和 `127.0.0.1` 仍直连。MLX 健康检查在配置了密钥文件时会带上 `Authorization`。
 - 模板工作台可以导出提词稿：按当前字幕和个人信息生成只含念稿内容的纯文本、SRT、结构化 JSON 或大字提词卡，供外部提词器、平板或打印使用。已合成版本同样可以导出，不会写入或修改模板包。
 - 新增命令 `remake template:script <slug> --video <包名> [--lang zh|en --format txt|srt|json|cards --out FILE]`，不加 `--out` 时直接输出到标准输出，便于管道或重定向。
 - 新增网页接口 `GET /prompt`（`?language=zh|en&format=txt|srt|json|cards`），返回带下载文件名的内容。

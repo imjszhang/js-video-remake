@@ -1,6 +1,6 @@
 ---
 name: remake-media
-description: 在 video-remake 项目中准备图片、视频和转写需求，按 media 配置选择工具、检查所需能力、生成素材并落到 productions/<slug>/assets/。工具的执行方式和专属操作以所选 provider 指南为准。成片和对比片用项目锁定的 HyperFrames 渲染。
+description: 在 video-remake 项目中准备图片、视频、语音合成和转写需求，按 media 配置选择工具、检查所需能力、生成素材并落到 productions/<slug>/assets/。工具的执行方式和专属操作以所选 provider 指南为准。成片和对比片用项目锁定的 HyperFrames 渲染。
 ---
 
 # remake-media
@@ -21,6 +21,7 @@ node cli/remake.js media:doctor
 | --- | --- | --- |
 | 出图：定妆、静帧、产品图 | `codex-image` | [providers/codex-image.md](providers/codex-image.md) |
 | 出片：口播、B-roll、镜头运动 | `comfy-mcp` | [providers/comfy-mcp.md](providers/comfy-mcp.md) |
+| 语音合成：把台词念成 WAV | `macos-say` | [providers/macos-say.md](providers/macos-say.md) |
 | 转写：新口播、字幕、词级时间 | `mlx-whisper` | [providers/mlx-whisper.md](providers/mlx-whisper.md) |
 
 配置、需求格式和接入说明见 [docs/media-providers.md](../../../docs/media-providers.md)。新增工具不需要修改本技能的通用流程。
@@ -30,6 +31,8 @@ node cli/remake.js media:doctor
 图片还可显式选择 [openai-image](providers/openai-image.md)、[gemini-image](providers/gemini-image.md)、[aliyun-image](providers/aliyun-image.md)、[comfyui-image](providers/comfyui-image.md)。按对应指南配置，生成前仍需授权；新适配器的 doctor 仅本地检查，不确认云端额度或 ComfyUI 运行状态。
 
 视频默认保留 `comfy-mcp`。新增 [aliyun-video](providers/aliyun-video.md)、[runway-video](providers/runway-video.md)、[minimax-video](providers/minimax-video.md)，通过 `media:video --request <需求.json>` 执行文生或单张首帧图生视频；`--task-id` 只继续查询/下载。实际执行仍需当前任务的生成授权；新适配器 doctor 不调用服务。
+
+语音合成默认是 `macos-say`（[指南](providers/macos-say.md)），只用 macOS 系统音色。可选 [qwen-tts](providers/qwen-tts.md)：需要参考 WAV 和这段参考音频里的原话，向配置的 HTTP 接口提交后取回 WAV。实际合成仍需当前任务授权。模板工作台的「根据字幕生成口播」不走这个 provider。
 
 转写默认保留 `mlx-whisper`。可选 [aliyun-asr](providers/aliyun-asr.md)、[faster-whisper](providers/faster-whisper.md)、[azure-speech](providers/azure-speech.md)，都通过同一个 `media:transcribe` 入口交付字幕来源 JSON。按当前选择的指南核对语言、部署和认证；本地检查通过不等于模型已缓存、云端权限或额度可用。不自动切换 provider、下载模型或重试收费任务。
 

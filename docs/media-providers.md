@@ -1,6 +1,6 @@
 # 素材生成 provider
 
-出图、出片、转写三项任务各自选择一个 provider。制作流程描述素材需求，provider 负责转换工具参数、执行调用和交付结果，项目负责能力检查、结果检查及素材落地。选择和本机参数写在 `video-remake.json` 的 `media` 段；没写时使用本项目的默认选择。
+出图、出片、语音合成、转写四项任务各自选择一个 provider。制作流程描述素材需求，provider 负责转换工具参数、执行调用和交付结果，项目负责能力检查、结果检查及素材落地。选择和本机参数写在 `video-remake.json` 的 `media` 段；没写时使用本项目的默认选择。
 
 默认图片工具为 `codex-image`，由当前 Agent 调用内置生图。显式配置仍优先于默认值；不迁移已有制作、素材台账或转写文件。
 
@@ -8,9 +8,10 @@
 | --- | --- | --- | --- |
 | 出图 `image` | `codex-image` | Agent 调当前会话的内置生图工具 | 以当前会话工具为准 |
 | 出片 `video` | `comfy-mcp` | Agent 通过 ComfyUI MCP 调非 API MiniMax H3 模板；CLI 做需求准备和探活 | comfy-mcp 0.10.0，ComfyUI 0.41.0 |
+| 语音合成 `speech` | `macos-say` | `remake media:speech` 调 macOS 系统语音，返回 WAV | say |
 | 转写 `transcribe` | `mlx-whisper` | `remake media:transcribe` 调已部署的 OpenAI 兼容转写端点 | whisper-large-v3 |
 
-`remake media:doctor` 显示当前选择、执行方式、支持能力、探测到的版本、是否就绪和对应的 Agent 指南。`--task image|video|transcribe` 只检查一项，未就绪时以非零退出。JSON 中的 `execution` 为 `program` 或 `agent`，分别表示程序调用和 Agent 执行；保留 `agentOnly` 字段以兼容已有调用方。
+`remake media:doctor` 显示当前选择、执行方式、支持能力、探测到的版本、是否就绪和对应的 Agent 指南。`--task image|video|speech|transcribe` 只检查一项，未就绪时以非零退出。JSON 中的 `execution` 为 `program` 或 `agent`，分别表示程序调用和 Agent 执行；保留 `agentOnly` 字段以兼容已有调用方。
 
 ## 需求准备与能力检查
 
@@ -121,6 +122,7 @@ node cli/remake.js media:prepare --task video --request request.json --json
 | --- | --- | --- |
 | `image` | `intent`：生成或编辑意图 | `images`：参考图片路径数组；`size`：尺寸；`outPath`：输出路径；`options`；`require` |
 | `video` | `intent`：片段意图 | `images`：参考图片路径数组；`audio`：驱动音频；`referenceVideo`：姿态参考视频；`duration`：秒数；`aspectRatio`：画幅；`outPath`：视频输出路径；`options`；`require` |
+| `speech` | `text`：要念的台词 | `reference`：参考 WAV；`referenceText`：参考音频的台词；`language`；`voice`；`outPath`；`options`；`require` |
 | `transcribe` | `file`：待转写音频路径 | `language`；`options`；`require` |
 
 `options` 是所选 provider 的专属选项对象，不能用它替代通用需求。没有实现专属选项校验的 provider 只接受空 `options`。`require` 是额外能力要求的字符串数组；即使没有填写，项目也会从任务和参考输入推断基本要求。当前 provider 的配置、专属选项和支持能力不会被自动搬到另一家工具。视频 `duration` 必须是大于 0 的数字，`aspectRatio` 是正整数比例，如 `9:16`；工具实际支持的范围仍按专属指南检查。
@@ -140,6 +142,7 @@ node cli/remake.js media:prepare --task video --request request.json --json
 | --- | --- | --- |
 | 图片 | `text-to-image`、`image-edit` | 无参考图时要求文生图，有参考图时要求图片编辑 |
 | 视频 | `text-to-video`、`image-to-video`、`audio-driven-video`、`pose-reference-video`、`multi-reference-video` | 根据图片、音频和姿态参考视频推断要求，并检查 `require` |
+| 语音合成 | `text-to-speech` | 有台词即要求文本转语音；参考音频是否必填由所选 provider 决定 |
 | 转写 | `timed-transcription`、`word-timestamps` | 基本要求是带时间的转写；需要逐词字幕时显式要求 `word-timestamps` |
 
 视频有 `audio` 时要求 `audio-driven-video`，有 `referenceVideo` 时要求 `pose-reference-video`，有多张参考图时要求 `multi-reference-video`，这些要求可同时出现。只有都不适用时，才按有无参考图推断 `image-to-video` 或 `text-to-video`；例如“单张人物图 + 音频”要求音频驱动，不额外强求普通图生视频能力。显式的 `require` 与推断结果合并去重。
@@ -189,6 +192,11 @@ node cli/remake.js media:transcribe demo --from speech.wav --require word-timest
 | `media.image.provider` | `VIDEO_REMAKE_MEDIA_IMAGE` |
 | `media.video.provider` | `VIDEO_REMAKE_MEDIA_VIDEO` |
 | `media.transcribe.provider` | `VIDEO_REMAKE_MEDIA_TRANSCRIBE` |
+| `media.speech.provider` | `VIDEO_REMAKE_MEDIA_SPEECH` |
+| `media.speech.baseUrl` | `QWEN_TTS_BASE_URL` |
+| `media.speech.healthUrl` | `QWEN_TTS_HEALTH_URL` |
+| `media.speech.apiKeyFile` | `QWEN_TTS_API_KEY_FILE` |
+| `media.speech.voice` | `MACOS_SAY_VOICE` |
 | `media.video.url` | `COMFYUI_URL` |
 | `media.transcribe.healthUrl` | `WHISPER_HEALTH_URL` |
 | `media.transcribe.transcriptionUrl` | `WHISPER_TRANSCRIPTION_URL` |
@@ -196,6 +204,34 @@ node cli/remake.js media:transcribe demo --from speech.wav --require word-timest
 | `media.transcribe.deployDir` | `WHISPER_DEPLOY_DIR` |
 
 以上表格是默认工具的设置。MLX 的 `model`（默认 `whisper-large-v3`）和默认 `language` 只能写在配置文件里；单次转写仍可用 `--language` 覆盖语言。配置中的路径支持 `~/`，相对路径按工作区解析。未知 provider、未知任务名或不属于所选 provider 的设置会报 `CONFIG_INVALID`。`video-remake.json` 已被 gitignore；本机路径、地址和密钥只放在这里或环境变量中。`media:doctor` 的可公开设置由各 provider 的 `publicSettings` 声明，不打印密钥文件和安装路径。
+
+访问这些服务若必须经过代理，在配置文件顶层设置 `proxy`，或用环境变量 `VIDEO_REMAKE_PROXY` 覆盖。值是不带凭据的 `socks5://主机:端口`。程序发出的素材请求、素材网关请求和模板接口探测都会使用它；`localhost`、`127.0.0.1` 和 `::1` 仍直接连接。主机名由代理解析。
+
+### 语音合成
+
+默认是 `macos-say`：用 macOS 系统音色把台词合成 WAV，不上传参考音频。`qwen-tts` 向兼容接口 `POST /v1/audio/speech` 提交台词、参考 WAV 和参考台词。两条都走 `media:speech`，生成后用 `media:land --kind audio` 登记。切换时替换整个 `media.speech` 对象。`qwen-tts` 的 doctor 在配置了 `healthUrl` 时才会请求健康检查；没有健康检查 URL 时只核对本地配置，不表示服务或额度可用。模板工作台里的「根据字幕生成口播」仍使用原来的 macOS 系统语音，不读取这里的 provider。
+
+```bash
+node cli/remake.js media:doctor --task speech
+node cli/remake.js media:speech --text "要念的台词" --reference ref.wav --reference-text "参考音频里的原话" --language Chinese --out speech.wav
+```
+
+| provider | 实际执行 | 音色 | 限制 |
+| --- | --- | --- | --- |
+| `macos-say`（默认） | 本机 `/usr/bin/say` | `--voice` 或 `media.speech.voice`，省略时用系统默认音色 | 仅 macOS；不接受参考音频；[指南](../.agents/skills/remake-media/providers/macos-say.md) |
+| `qwen-tts` | HTTP JSON，返回 WAV | 由 16-bit PCM 参考 WAV 决定，时长 1–30 秒，不超过 12 MiB | 台词和参考台词各 1–2000 字；`response_format` 固定为 wav；[指南](../.agents/skills/remake-media/providers/qwen-tts.md) |
+
+已确认可通过语言检查的值包括 `auto`、`Chinese`、`English`、`Japanese`、`Korean`、`German`、`French`、`Russian`。未填写时使用服务自己的默认语言。服务拒绝的语言会原样返回，项目不另造一份完整语言表。
+
+```json
+{
+  "provider": "qwen-tts",
+  "baseUrl": "http://127.0.0.1:8888",
+  "healthUrl": "http://127.0.0.1:8888/api/qwen3-tts-1.7b-base/health",
+  "apiKeyFile": "~/path/to/gateway-key",
+  "model": "qwen3-tts"
+}
+```
 
 ### 可选转写工具
 
@@ -266,8 +302,8 @@ Azure（示例区域必须替换为实际 Speech 资源支持的区域）：
 
 **MLX Whisper 服务**
 
-- `GET <healthUrl>` 返回 `{"status":"ok"}`。
-- `POST <transcriptionUrl>`，multipart 字段 `file`、`model`、`language`（可选）、`response_format=verbose_json`；要求词级时间时增加 `timestamp_granularities[]=word` 和 `segment`；有密钥文件时带 `Authorization: Bearer <第一行>`。服务需实际开启 MLX 的 `word_timestamps=True`。
+- `GET <healthUrl>` 返回 `{"status":"ok"}`。配置了密钥文件时，这次探活也带 `Authorization: Bearer <第一行>`。
+- `POST <transcriptionUrl>`，multipart 字段 `file`、`model`、`language`（可选）、`response_format=verbose_json`；要求词级时间时增加 `timestamp_granularities[]=word` 和 `segment`；有密钥文件时带 `Authorization: Bearer <第一行>`。服务需实际开启 MLX 的 `word_timestamps=True`。项目配置了 `proxy` 且地址不是本机时，请求经该代理发出。
 - 响应 JSON 含 `segments`（可带 `words`）或 `words`，`remake captions` 直接读取。请求体上限 64 MiB。
 
 ## 接入新的 provider

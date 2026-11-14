@@ -7,12 +7,14 @@ export const MEDIA_CAPABILITIES = {
     image: ['text-to-image', 'image-edit'],
     video: ['text-to-video', 'image-to-video', 'audio-driven-video', 'pose-reference-video', 'multi-reference-video'],
     transcribe: ['timed-transcription', 'word-timestamps'],
+    speech: ['text-to-speech'],
 };
 
 const REQUEST_FIELDS = {
     image: ['intent', 'images', 'size', 'outPath'],
     video: ['intent', 'images', 'audio', 'referenceVideo', 'duration', 'aspectRatio', 'outPath'],
     transcribe: ['file', 'language'],
+    speech: ['text', 'reference', 'referenceText', 'language', 'voice', 'outPath'],
 };
 const invalid = (message) => appError('INVALID_INPUT', message);
 const failed = (message) => appError('MEDIA_FAILED', message);
@@ -43,6 +45,14 @@ export function normalizeMediaRequest(task, input, workspace) {
         request.file = path.resolve(workspace, string(input.file, 'file'));
         if (input.language !== undefined) string(input.language, 'language');
         inferred.push('timed-transcription');
+    } else if (task === 'speech') {
+        request.text = string(input.text, 'text');
+        if (input.reference !== undefined) request.reference = path.resolve(workspace, string(input.reference, 'reference'));
+        if (input.referenceText !== undefined) string(input.referenceText, 'referenceText');
+        if (input.language !== undefined) string(input.language, 'language');
+        if (input.voice !== undefined) string(input.voice, 'voice');
+        if (input.outPath !== undefined) request.outPath = path.resolve(workspace, string(input.outPath, 'outPath'));
+        inferred.push('text-to-speech');
     } else {
         string(input.intent, 'intent');
         if (input.images !== undefined && !Array.isArray(input.images)) throw invalid('images 必须是文件路径数组。');
@@ -84,7 +94,7 @@ export function assertCapabilities(provider, request) {
 }
 
 export async function validateRequestFiles(request) {
-    const files = [...(request.images ?? []), request.file, request.audio, request.referenceVideo].filter(Boolean);
+    const files = [...(request.images ?? []), request.file, request.audio, request.referenceVideo, request.reference].filter(Boolean);
     for (const file of files) {
         const stat = await fs.stat(file).catch(() => null);
         if (!stat?.isFile()) throw appError('NOT_FOUND', `素材输入文件不存在: ${file}`);

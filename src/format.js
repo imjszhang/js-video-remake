@@ -202,6 +202,7 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
     if (data?.command === 'paths') {
         write(`workspace: ${data.workspace}`);
         write(`asset-root: ${data.assetRoot}`);
+        if (data.proxy) write(`代理: ${data.proxy}`);
         if (data.download) write(`下载工具: ${data.download.provider}；下载目录: ${data.download.directory}`);
         if (data.tools?.hyperframes) write(`hyperframes: ${data.tools.hyperframes.expected}`);
         for (const [task, provider] of Object.entries(data.media || {})) write(`media.${task}: ${provider}`);
@@ -238,7 +239,7 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
     }
     if (data?.command === 'media:doctor') {
         if (!result.ok) write(`错误 [${result.error.code}]: ${result.error.message}`);
-        const names = { image: '出图', video: '出片', transcribe: '转写' };
+        const names = { image: '出图', video: '出片', speech: '语音合成', transcribe: '转写' };
         for (const [task, item] of Object.entries(data.media)) {
             const version = item.version ? ` ${item.version}` : '';
             write(`${names[task] || task}: ${item.provider}${version}（${item.ready ? '就绪' : '未就绪'}${item.agentOnly ? '，由 Agent 按指南调用' : ''}）`);
@@ -256,10 +257,11 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         write('仅检查了需求与本地输入；尚未探活或生成，生成仍需用户授权。');
         return;
     }
-    if (data?.command === 'media:image' || data?.command === 'media:video') {
+    if (data?.command === 'media:image' || data?.command === 'media:video' || data?.command === 'media:speech') {
         write(`已生成: ${data.path}`);
         write(`provider: ${data.provider}`);
         if (data.taskId) write(`任务 ID: ${data.taskId}`);
+        if (data.next) write(`下一步: ${data.next}`);
         return;
     }
     if (data?.command === 'media:transcribe') {

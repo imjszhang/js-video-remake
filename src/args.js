@@ -5,7 +5,7 @@ const COMMANDS = new Set([
     'reference:list', 'reference:import', 'reference:scan', 'reference:download', 'download:doctor',
     'paths', 'deliver', 'compare',
     'check', 'captions', 'normalize', 'studio', 'timeline',
-    'media:doctor', 'media:prepare', 'media:image', 'media:video', 'media:transcribe', 'media:land',
+    'media:doctor', 'media:prepare', 'media:image', 'media:video', 'media:speech', 'media:transcribe', 'media:land',
     'video:new', 'video:fork', 'video:list', 'video:render', 'video:import', 'video:add', 'video:pack', 'video:unpack', 'video:remix', 'video:generate',
     'template:script',
     'agent:config', 'agent:doctor', 'agent:plan', 'agent:run',
@@ -176,13 +176,15 @@ Reproduction options:
   video:remix <slug>         另存为新模板 --title 名称 [--video 包名 --style 样式.json]；清除个人输入
   video:generate <slug>      Agent 生成新模板 --title 名称 --prompt 修改要求 [--video 包名 --target Agent --mode derive|revise]
   template:script <slug>     导出提词稿 [--video 包名 --lang zh|en --format txt|srt|json|cards --out FILE]
-  media:doctor                Show configured image/video/transcribe providers and probe them [--task NAME]
+  media:doctor                Show configured image/video/speech/transcribe providers and probe them [--task NAME]
   media:prepare --task NAME --request FILE
                               本地检查素材需求、能力与输入文件，输出工具交接信息；不生成、不探活
   media:image --intent TEXT   Generate a still with the configured image provider
                               [--image FILE (repeatable) --size WxH --image-quality Q --out FILE]
   media:video --request FILE [--out FILE]
                               按配置生成视频片段；--task-id ID 代替 --request 继续查询已有任务
+  media:speech --text TEXT    Synthesize speech with the configured provider
+                              [--reference WAV --reference-text TEXT --language L --voice NAME --out FILE.wav]
   media:transcribe <slug> --from <audio>
                               Transcribe with the configured provider into assets/<id>.transcript.json [--id ID --language L --force]
   media:land <slug> --kind image|video|audio --from FILE --intent TEXT --provider NAME
@@ -227,16 +229,20 @@ Options:
   --subtitle-script 文本     video:generate：提供新字幕原稿（最多 30000 字）
   --mode derive|revise        video:generate：新建独立模板（默认）或更新当前模板版本
   --video NAME                Code video package under videos/ (required when there are several)
-  --out FILE                  media:image / media:video 输出，或 video:pack 的 .video 文件
+  --out FILE                  media:image / media:video / media:speech 输出，或 video:pack 的 .video 文件
   --lang zh|en                template:script 提词稿语言（默认 zh）
   --format txt|srt|json|cards template:script 输出格式（默认 txt；不加 --out 时写到标准输出）
   --skip-install              video:new / video:fork: do not run npm in the package
   --alpha keep|flatten        Alpha still or video: ProRes 4444, or composite on black
   --max-chars N               Caption cue length (default 16)
-  --task image|video|transcribe
+  --task image|video|speech|transcribe
                               media:doctor 检查范围；media:prepare 的素材任务类型
+  --text TEXT                media:speech 要合成的台词
+  --reference FILE           media:speech 的参考 WAV
+  --reference-text TEXT      media:speech 参考音频对应的台词
+  --voice NAME               media:speech 的系统音色
   --request FILE             media:prepare / media:video 的素材需求 JSON；内部相对路径按工作区解析
-  --require CAPABILITY       media:image / media:video / media:transcribe 的额外能力要求，可重复
+  --require CAPABILITY       media:image / media:video / media:speech / media:transcribe 的额外能力要求，可重复
   --stop --status             Studio preview lifecycle
   --workspace DIR
   --source-provider local|gateway-video|manifest (default: local)

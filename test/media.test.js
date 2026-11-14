@@ -30,10 +30,10 @@ function fakeFetch(routes) {
     return { impl, calls };
 }
 
-test('media defaults to this project\'s three providers', () => {
+test('media defaults to this project\'s providers', () => {
     const media = resolveMediaConfig({}, {}, WS);
     assert.deepEqual(Object.fromEntries(Object.entries(media).map(([task, entry]) => [task, entry.provider])), DEFAULT_PROVIDERS);
-    assert.deepEqual(DEFAULT_PROVIDERS, { image: 'codex-image', video: 'comfy-mcp', transcribe: 'mlx-whisper' });
+    assert.deepEqual(DEFAULT_PROVIDERS, { image: 'codex-image', video: 'comfy-mcp', transcribe: 'mlx-whisper', speech: 'macos-say' });
     assert.deepEqual(media.image.settings, {});
     assert.equal(media.transcribe.settings.model, 'whisper-large-v3');
 });
@@ -80,6 +80,7 @@ test('media:doctor probes each provider and hides local paths', async (t) => {
     const workspace = await tempWorkspace(t);
     const keyFile = path.join(workspace.directory, 'image-key');
     await fs.writeFile(keyFile, 'fixture-key');
+    await fs.writeFile(path.join(workspace.directory, 'key'), 'whisper-secret\n');
     const env = {
         ...workspace.env,
         VIDEO_REMAKE_MEDIA_IMAGE: 'openai-image', OPENAI_IMAGE_API_KEY_FILE: keyFile,
@@ -99,9 +100,14 @@ test('media:doctor probes each provider and hides local paths', async (t) => {
     assert.equal(result.data.media.video.version, 'ComfyUI 0.41.0');
     assert.equal(result.data.media.video.agentOnly, true);
     assert.equal(result.data.media.transcribe.ready, true);
+    const health = fetch.calls.find((call) => call.url === 'http://whisper.test/health');
+    assert.equal(health.init.headers.Authorization, 'Bearer whisper-secret');
     assert.equal(result.data.media.image.guide, '.agents/skills/remake-media/providers/openai-image.md');
     assert.equal(result.data.media.image.settings.apiKeyFile, undefined);
     assert.equal(result.data.media.transcribe.settings.apiKeyFile, undefined);
+    assert.equal(result.data.media.speech.ready, true);
+    assert.equal(result.data.media.speech.provider, 'macos-say');
+    assert.equal(result.data.media.speech.settings.apiKeyFile, undefined);
     assert.deepEqual(result.data.warnings, []);
     await fs.access(path.join(process.cwd(), result.data.media.video.guide));
     await fs.access(path.join(process.cwd(), result.data.media.transcribe.guide));

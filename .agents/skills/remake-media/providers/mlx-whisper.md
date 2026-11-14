@@ -25,7 +25,7 @@
 node cli/remake.js media:doctor --task transcribe
 ```
 
-未就绪时，先检查部署状态并询问用户是否启动服务。以下命令适用于提供 `manage.sh` 的部署，其他部署使用各自的启动方式：
+配置了密钥文件时，健康检查会带上 `Authorization: Bearer`。项目若在 `video-remake.json` 配置了 `proxy`（或环境变量 `VIDEO_REMAKE_PROXY`），非本机地址经该 SOCKS5 代理连接。未就绪时，先检查部署状态并询问用户是否启动服务。以下命令适用于提供 `manage.sh` 的部署，其他部署使用各自的启动方式：
 
 ```bash
 cd "${WHISPER_DEPLOY_DIR:?请配置部署目录}"

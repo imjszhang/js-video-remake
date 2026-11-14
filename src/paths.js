@@ -10,5 +10,6 @@ export async function projectPaths(config, options = {}) {
         download: config.download,
         tools: { ffmpeg: tools.ffmpeg, ffprobe: tools.ffprobe, hyperframes: tools.hyperframes },
         media: Object.fromEntries(Object.entries(config.media).map(([task, entry]) => [task, entry.provider])),
+        ...(config.proxy ? { proxy: config.proxy } : {}),
     };
 }

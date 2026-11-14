@@ -14,8 +14,11 @@ async function readKey(file) {
     }
 }
 
-export async function probeWhisper(url, { fetchImpl = fetch, timeoutMs = 5000 } = {}) {
-    const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+export async function probeWhisper(url, { fetchImpl = fetch, timeoutMs = 5000, headers } = {}) {
+    const response = await fetchImpl(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        ...(headers && Object.keys(headers).length ? { headers } : {}),
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json().catch(() => ({}));
     if (body?.status !== 'ok') throw new Error(`健康检查返回 ${JSON.stringify(body).slice(0, 120)}`);
@@ -49,6 +52,7 @@ export async function transcribe(settings, { file, language, require: required =
             signal: AbortSignal.timeout(timeoutMs),
         });
     } catch (error) {
+        if (typeof error.code === 'string' && error.code.includes('_')) throw error;
         throw appError('MEDIA_FAILED', `转写服务不可达: ${error.message}`, { retryable: true });
     }
     const text = await response.text();
@@ -81,11 +85,14 @@ export default {
         model: { type: 'string', default: DEFAULT_MODEL },
         language: { type: 'string' },
     },
-    async doctor(settings, { fetchImpl }) {
+    async doctor(settings, { fetchImpl = fetch } = {}) {
         if (!settings.transcriptionUrl) return { ready: false, version: '', hint: '未配置 WHISPER_TRANSCRIPTION_URL 或 media.transcribe.transcriptionUrl。' };
         if (!settings.healthUrl) return { ready: true, version: settings.model || DEFAULT_MODEL, hint: '未配置健康检查 URL，跳过探活。' };
         try {
-            await probeWhisper(settings.healthUrl, { fetchImpl });
+            const headers = {};
+            const key = await readKey(settings.apiKeyFile);
+            if (key) headers.Authorization = `Bearer ${key}`;
+            await probeWhisper(settings.healthUrl, { fetchImpl, headers });
             return { ready: true, version: settings.model || DEFAULT_MODEL, hint: '' };
         } catch (error) {
             return { ready: false, version: '', hint: `转写服务未就绪: ${error.message}` };

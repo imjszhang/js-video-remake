@@ -14,6 +14,8 @@ import mlxWhisper from './providers/mlx-whisper.js';
 import aliyunAsr from './providers/aliyun-asr.js';
 import fasterWhisper from './providers/faster-whisper.js';
 import azureSpeech from './providers/azure-speech.js';
+import qwenTts from './providers/qwen-tts.js';
+import macosSay from './providers/macos-say.js';
 
 // Registered providers per task. Add a module under providers/ and list it here.
 export const PROVIDERS = {
@@ -26,12 +28,13 @@ export const PROVIDERS = {
         [mlxWhisper.id]: mlxWhisper, [aliyunAsr.id]: aliyunAsr,
         [fasterWhisper.id]: fasterWhisper, [azureSpeech.id]: azureSpeech,
     },
+    speech: { [qwenTts.id]: qwenTts, [macosSay.id]: macosSay },
 };
 
 // This project's selection when video-remake.json does not name one.
-export const DEFAULT_PROVIDERS = { image: 'codex-image', video: 'comfy-mcp', transcribe: 'mlx-whisper' };
+export const DEFAULT_PROVIDERS = { image: 'codex-image', video: 'comfy-mcp', transcribe: 'mlx-whisper', speech: 'macos-say' };
 export const MEDIA_TASKS = Object.keys(DEFAULT_PROVIDERS);
-export const PROVIDER_ENV = { image: 'VIDEO_REMAKE_MEDIA_IMAGE', video: 'VIDEO_REMAKE_MEDIA_VIDEO', transcribe: 'VIDEO_REMAKE_MEDIA_TRANSCRIBE' };
+export const PROVIDER_ENV = { image: 'VIDEO_REMAKE_MEDIA_IMAGE', video: 'VIDEO_REMAKE_MEDIA_VIDEO', transcribe: 'VIDEO_REMAKE_MEDIA_TRANSCRIBE', speech: 'VIDEO_REMAKE_MEDIA_SPEECH' };
 
 const invalid = (message) => appError('CONFIG_INVALID', message);
 

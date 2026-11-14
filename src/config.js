@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { appError } from './errors.js';
 import { resolveMediaConfig } from './media/config.js';
+import { parseSocksUrl } from './media/socks.js';
 
 const QUALITIES = new Set(['720', '1080', 'audio']);
 
@@ -116,6 +117,13 @@ export function resolveConfig(overrides = {}, env = process.env, cwd = process.c
     }
 
     const media = resolveMediaConfig(file.media ?? {}, env, workspace);
+    const proxyValue = overrides.proxy ?? env.VIDEO_REMAKE_PROXY ?? file.proxy;
+    let proxy;
+    if (proxyValue !== undefined && proxyValue !== '') {
+        if (typeof proxyValue !== 'string') throw appError('CONFIG_INVALID', 'proxy 必须是 socks5 URL。');
+        parseSocksUrl(proxyValue);
+        proxy = new URL(proxyValue.trim()).href.replace(/\/$/, '');
+    }
 
     return {
         workspace,
@@ -127,6 +135,7 @@ export function resolveConfig(overrides = {}, env = process.env, cwd = process.c
         quality,
         media,
         download,
+        ...(proxy ? { proxy } : {}),
     };
 }
 

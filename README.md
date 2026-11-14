@@ -63,10 +63,10 @@ npm start
 | 合成视频、渲染预览与对比片 | FFmpeg / ffprobe，以及 HyperFrames 所需浏览器；HyperFrames `0.8.191` 由依赖锁定 |
 | 从链接下载参考视频 | 本机 yt-dlp，见[下载配置](docs/local-references.md#从链接下载并登记) |
 | 让 Agent 改造模板 | 配置并启用本机 Agent，见[Agent 配置](docs/agent-runtime.md#配置与首次运行) |
-| 生成图片、视频片段或转写 | 所选服务或本机工具，见[素材生成配置](docs/media-providers.md) |
+| 生成图片、视频片段、语音或转写 | 所选服务或本机工具，见[素材生成配置](docs/media-providers.md) |
 | 按字幕生成本机口播 | macOS、已安装的系统音色、FFmpeg / ffprobe，见[口播说明](docs/template-speech.md) |
 
-使用默认设置即可启动工作台。需要修改素材目录、下载工具或素材服务时，再从 `video-remake.example.json` 复制一份为 `video-remake.json` 并编辑；已有配置请直接修改。配置文件仅保存在本机。
+使用默认设置即可启动工作台。需要修改素材目录、下载工具或素材服务时，再从 `video-remake.example.json` 复制一份为 `video-remake.json` 并编辑；已有配置请直接修改。配置文件仅保存在本机。访问局域网或需经代理才能到达的服务时，可在同一文件设置 `proxy` 为 `socks5://主机:端口`，或用环境变量 `VIDEO_REMAKE_PROXY` 覆盖；本机地址不走该代理。
 
 端口、远程访问、macOS 常驻服务及反向代理配置见[工作台与部署](docs/workbench.md)。
 

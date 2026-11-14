@@ -1,4 +1,5 @@
 import { appError } from '../errors.js';
+import { httpFetch } from '../http.js';
 import { gatewayVideo } from './gateway-video.js';
 import { localSource } from './local.js';
 import { manifestSource } from './manifest.js';
@@ -8,7 +9,7 @@ import { manifestSource } from './manifest.js';
 export function createSourceProvider(config, options = {}) {
     switch (config.source.provider) {
         case 'local': return localSource(config);
-        case 'gateway-video': return gatewayVideo(config, options);
+        case 'gateway-video': return gatewayVideo(config, { ...options, fetchImpl: httpFetch(config.proxy, options.fetchImpl) });
         case 'manifest': return manifestSource(config);
         default: throw appError('CONFIG_INVALID', `不支持的数据源: ${config.source.provider}`);
     }

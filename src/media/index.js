@@ -5,6 +5,11 @@ import { openProduction } from '../start.js';
 import { getProvider, MEDIA_TASKS } from './config.js';
 import { ID_RE, KIND_PREFIX, land } from './land.js';
 import { normalizeMediaRequest, assertCapabilities, validateRequestFiles, validateMediaFileResult, validateTranscriptResult } from './contracts.js';
+import { httpFetch } from '../http.js';
+
+function withNetwork(config, deps = {}) {
+    return { ...deps, env: config.env ?? process.env, fetchImpl: httpFetch(config.proxy, deps.fetchImpl) };
+}
 
 export const SKILL_DIR = '.agents/skills/remake-media';
 function selected(config, task, deps = {}) {
@@ -52,7 +57,7 @@ export async function mediaDoctor(config, { task } = {}, deps = {}) {
     const media = {};
     for (const name of tasks) {
         const { entry, provider } = selected(config, name, deps);
-        const check = await provider.doctor(entry.settings, { ...deps, env: config.env ?? process.env, fetchImpl: deps.fetchImpl ?? fetch });
+        const check = await provider.doctor(entry.settings, withNetwork(config, deps));
         media[name] = {
             provider: provider.id,
             label: provider.label,
@@ -93,7 +98,7 @@ export async function mediaImage(config, flags, deps = {}) {
     }, deps);
     if (provider.execution !== 'program') throw appError('MEDIA_AGENT_REQUIRED', `请由 Agent 按 ${SKILL_DIR}/${provider.guide} 生成图片。`);
     const result = await validateMediaFileResult(await provider.generateImage(entry.settings, request,
-        { ...deps, env: config.env ?? process.env }), provider);
+        withNetwork(config, deps)), provider);
     return { command: 'media:image', provider: result.provider, path: result.path, sourcePath: result.sourcePath };
 }
 
@@ -118,7 +123,7 @@ export async function mediaVideo(config, flags = {}, deps = {}) {
         }, deps));
     }
     if (provider.execution !== 'program') throw appError('MEDIA_AGENT_REQUIRED', `请由 Agent 按 ${SKILL_DIR}/${provider.guide} 生成或查询视频。`);
-    const context = { ...deps, env: config.env ?? process.env };
+    const context = withNetwork(config, deps);
     let raw;
     if (flags.taskId) {
         if (!provider.resumeVideo) throw appError('MEDIA_CAPABILITY_UNSUPPORTED', '所选视频适配器不支持按任务 ID 继续查询。');
@@ -146,7 +151,7 @@ export async function mediaTranscribe(config, { slug, from, id, language, force,
         }
     }
     const json = validateTranscriptResult(await provider.transcribe(entry.settings, request,
-        { ...deps, env: config.env ?? process.env }), request);
+        withNetwork(config, deps)), request);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, `${JSON.stringify(json, null, 2)}\n`);
     return {
@@ -155,6 +160,26 @@ export async function mediaTranscribe(config, { slug, from, id, language, force,
         provider: provider.ledgerProviders[0],
         path: path.relative(config.workspace, target).split(path.sep).join('/'),
         next: `remake captions ${slug} --from assets/${transcriptId}.transcript.json`,
+    };
+}
+
+export async function mediaSpeech(config, flags = {}, deps = {}) {
+    if (!flags.text) throw appError('INVALID_INPUT', 'media:speech 需要 --text。');
+    const { entry, provider, request } = await prepareRequest(config, 'speech', {
+        text: flags.text,
+        reference: flags.reference,
+        referenceText: flags.referenceText,
+        language: flags.language,
+        voice: flags.voice,
+        outPath: flags.out,
+        require: flags.require,
+    }, deps);
+    if (provider.execution !== 'program') throw appError('MEDIA_AGENT_REQUIRED', `请由 Agent 按 ${SKILL_DIR}/${provider.guide} 合成语音。`);
+    const raw = await provider.synthesize(entry.settings, request, withNetwork(config, deps));
+    const result = await validateMediaFileResult(raw, provider);
+    return {
+        command: 'media:speech', provider: result.provider, path: result.path,
+        next: `remake media:land <slug> --kind audio --from ${result.path} --intent "口播" --provider ${result.provider}`,
     };
 }
 

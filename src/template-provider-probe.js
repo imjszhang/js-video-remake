@@ -1,6 +1,7 @@
 import { readTemplateProviders } from './template-providers.js';
 import { displayModel } from './template-agent-details.js';
 import { appError } from './errors.js';
+import { httpFetch } from './http.js';
 const invalid = message => appError('INVALID_INPUT', message);
 
 export async function probeTemplateProvider(config, body, deps = {}) {
@@ -25,7 +26,7 @@ export async function probeTemplateProvider(config, body, deps = {}) {
     const timer = setTimeout(() => controller.abort(), deps.providerProbeTimeoutMs || 15000);
     const started = Date.now();
     try {
-        const response = await (deps.fetchImpl || fetch)(url.href, { method: 'GET', headers, redirect: 'manual', signal: controller.signal });
+        const response = await httpFetch(config.proxy, deps.fetchImpl)(url.href, { method: 'GET', headers, redirect: 'manual', signal: controller.signal });
         if (!response.ok) {
             await response.body?.cancel();
             const status = response.status;
