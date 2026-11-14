@@ -31,6 +31,19 @@ node cli/remake.js media:speech --text "要念的台词" \
 
 语言可以不填，由服务使用自己的默认值。已确认能通过语言检查的值包括 `auto`、`Chinese`、`English`、`Japanese`、`Korean`、`German`、`French`、`Russian`。请求固定发送 `response_format=wav`。
 
+同一段参考音可以先保存，以后不用每次再传文件和原话。后保存的音色成为默认。`voices/` 和 `voices.json` 只留在本机。
+
+```bash
+node cli/remake.js voice:save --from ref.wav --text "参考音频里的原话"
+node cli/remake.js media:speech --text "要念的台词" --language Chinese --out speech.wav
+```
+
+已保存音色也可以按模板字幕逐句念稿，并对齐到原来的时间窗。网页里的「根据字幕生成口播」不使用它。
+
+```bash
+node cli/remake.js template:voice <slug> --video <包名> --lang zh
+```
+
 结果是本地 WAV。登记到制作：
 
 ```bash

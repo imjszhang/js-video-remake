@@ -93,6 +93,61 @@ test('语音合成配置按 provider 隔离，命令把需求交给所选工具'
     assert.equal(result.data.path, target);
 });
 
+test('qwen-tts 未传参考音频时使用已保存音色，显式参考音频则不用它', async (t) => {
+    const workspace = await tempWorkspace(t);
+    const reference = path.join(workspace.directory, 'ref.wav');
+    const other = path.join(workspace.directory, 'other.wav');
+    const keyFile = path.join(workspace.directory, 'key');
+    await fs.writeFile(reference, wav());
+    await fs.writeFile(other, wav(2));
+    await fs.writeFile(keyFile, 'gateway-key\n');
+    const env = {
+        ...workspace.env,
+        VIDEO_REMAKE_MEDIA_SPEECH: 'qwen-tts',
+        QWEN_TTS_BASE_URL: 'http://speech.test',
+        QWEN_TTS_API_KEY_FILE: keyFile,
+    };
+    const saved = await execute(parseArgv(['voice:save', '--from', 'ref.wav', '--text', '参考原话']), workspace.env);
+    assert.equal(saved.ok, true);
+    assert.equal(saved.data.id, 'default');
+    assert.equal(saved.data.file, 'voices/default.wav');
+    let bodies = [];
+    const speak = async (argv) => execute(parseArgv(argv), env, {
+        fetchImpl: async (_url, init) => {
+            bodies.push(JSON.parse(init.body));
+            return new Response(wav(), { status: 200 });
+        },
+    });
+    const result = await speak(['media:speech', '--text', '新台词', '--out', 'out.wav']);
+    assert.equal(result.data.voiceId, 'default');
+    assert.equal(bodies[0].input, '新台词');
+    assert.equal(bodies[0].ref_text, '参考原话');
+    assert.equal(bodies[0].ref_audio_base64, wav().toString('base64'));
+    bodies = [];
+    const override = await speak(['media:speech', '--text', '另一句', '--reference', 'other.wav', '--reference-text', '另一段原话', '--out', 'other-out.wav']);
+    assert.equal(override.data.voiceId, undefined);
+    assert.equal(bodies[0].ref_text, '另一段原话');
+    assert.equal(bodies[0].ref_audio_base64, wav(2).toString('base64'));
+});
+
+test('没有保存音色时不会请求语音服务，系统音色也不读取音色样本', async (t) => {
+    const workspace = await tempWorkspace(t);
+    const keyFile = path.join(workspace.directory, 'key');
+    await fs.writeFile(keyFile, 'gateway-key\n');
+    const listed = await execute(parseArgv(['voice:list']), workspace.env);
+    assert.equal(listed.data.voices.length, 0);
+    await assert.rejects(fs.access(path.join(workspace.directory, 'voices.json')), { code: 'ENOENT' });
+    await assert.rejects(execute(parseArgv(['media:speech', '--text', '你好', '--out', 'out.wav']), {
+        ...workspace.env,
+        VIDEO_REMAKE_MEDIA_SPEECH: 'qwen-tts',
+        QWEN_TTS_BASE_URL: 'http://speech.test',
+        QWEN_TTS_API_KEY_FILE: keyFile,
+    }, { fetchImpl: () => assert.fail('没有音色时不得请求服务') }), /voice:save/);
+    await assert.rejects(execute(parseArgv(['media:speech', '--text', '你好', '--voice-id', 'default']), {
+        ...workspace.env, VIDEO_REMAKE_MEDIA_SPEECH: 'macos-say',
+    }), /系统音色/);
+});
+
 test('macos-say 在非 macOS 上未就绪，并且不接受参考音频', async () => {
     const check = await macosSay.doctor({}, { platform: 'linux' });
     assert.equal(check.ready, false);

@@ -90,7 +90,7 @@ async function saveWav(bytes, outPath) {
     return target;
 }
 
-export async function synthesize(settings, request, { fetchImpl = fetch, timeoutMs = 600000 } = {}) {
+export async function synthesize(settings, request, { fetchImpl = fetch, timeoutMs = 600000, signal } = {}) {
     validateSpeechRequest(request);
     const stat = await fs.stat(request.reference).catch(() => null);
     if (!stat?.isFile() || !stat.size || stat.size > MAX_REFERENCE_BYTES) throw invalid('参考音频不存在、为空或超过 12 MiB。');
@@ -112,7 +112,7 @@ export async function synthesize(settings, request, { fetchImpl = fetch, timeout
             method: 'POST',
             headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(timeoutMs),
+            signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs),
             redirect: 'error',
         });
     } catch (error) {

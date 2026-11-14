@@ -85,8 +85,7 @@ async function appendPcm(handle, file, maxSamples, index, signal) {
     } finally { await source.close(); }
 }
 
-/** Host-owned output, never edits subtitle rows or the template source. */
-export async function synthesizeCaptionSpeech(config, { rows, identity = {}, voice, language = 'zh', duration, outputFile } = {}, deps = {}) {
+async function prepareSpeechRows({ rows, identity = {}, language = 'zh', duration, outputFile } = {}) {
     if (!['zh', 'en'].includes(language)) throw fail('口播语言只能是中文或英文。');
     if (!Number.isFinite(duration) || duration <= 0 || duration > 3600) throw fail('口播总时长必须在 0–3600 秒内。');
     if (!Array.isArray(rows) || !rows.length || rows.length > 2000) throw fail('没有有效字幕可生成口播。');
@@ -102,10 +101,12 @@ export async function synthesizeCaptionSpeech(config, { rows, identity = {}, voi
         return { ...row, index, text: spokenText(value, identity, index) };
     }).filter(row => row.text);
     if (!speechRows.length) throw fail(`没有可朗读的${language === 'zh' ? '中文' : '英文'}字幕，请先填写字幕。`);
-    const options = await speechOptions(config, deps);
-    if (!options.available) throw fail(options.reason);
-    const selected = voice ? options.voices.find(item => item.id === voice && item.language === language) : options.voices.find(item => item.default && item.language === language);
-    if (!selected) throw fail('所选音色不存在或与口播语言不一致，请重新选择。');
+    return { speechRows, language };
+}
+
+/** Place each produced sentence back into its caption window. `produce` returns that sentence's audio file. */
+async function alignCaptionSpeech(config, { rows, speechRows, language, duration, outputFile, produce, provider: speechProvider, label: speechLabel, voice }, deps) {
+    try { await fs.lstat(outputFile); throw fail('口播输出文件已存在，不能覆盖。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'remake-caption-speech-'));
     const timeline = path.join(temporary, 'timeline.pcm');
     let writtenOutput = false, adjustedCount = 0;
@@ -117,9 +118,8 @@ export async function synthesizeCaptionSpeech(config, { rows, identity = {}, voi
                 cancelled(deps.signal);
                 const row = speechRows[i];
                 await deps.onProgress?.({ stage: 'speech', message: `正在生成第 ${row.index + 1}/${rows.length} 句口播`, current: i + 1, total: speechRows.length, captionIndex: row.index });
-                const textFile = path.join(temporary, `sentence-${i}.txt`), audio = path.join(temporary, `sentence-${i}.aiff`), pcm = path.join(temporary, `sentence-${i}.pcm`);
-                await fs.writeFile(textFile, row.text, { mode: 0o600 });
-                await command(config, '/usr/bin/say', ['-v', selected.id, '-r', '180', '-f', textFile, '-o', audio], deps);
+                const audio = await produce(row, i, temporary);
+                const pcm = path.join(temporary, `sentence-${i}.pcm`);
                 const probe = await command(config, 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', audio], deps, 15000);
                 let seconds;
                 try { seconds = Number(JSON.parse(probe.stdout).format.duration); } catch { throw fail(`无法测量第 ${row.index + 1} 句的语音时长。`); }
@@ -145,9 +145,57 @@ export async function synthesizeCaptionSpeech(config, { rows, identity = {}, voi
         await fs.chmod(final, 0o600);
         await fs.copyFile(final, outputFile, fs.constants.COPYFILE_EXCL); writtenOutput = true;
         cancelled(deps.signal);
-        return { provider, label, voice: selected.id, language, duration: Math.round(duration * RATE) / RATE, count: speechRows.length, totalCount: rows.length, skippedCount: rows.length - speechRows.length, adjustedCount, firstAt: speechRows[0].start, maxAcceleration: MAX_ACCELERATION };
+        return { provider: speechProvider, label: speechLabel, voice, language, duration: Math.round(duration * RATE) / RATE, count: speechRows.length, totalCount: rows.length, skippedCount: rows.length - speechRows.length, adjustedCount, firstAt: speechRows[0].start, maxAcceleration: MAX_ACCELERATION };
     } catch (error) {
         if (writtenOutput) await fs.rm(outputFile, { force: true });
         throw error;
     } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+}
+
+/** Host-owned output, never edits subtitle rows or the template source. Uses macOS system voices. */
+export async function synthesizeCaptionSpeech(config, options = {}, deps = {}) {
+    const { speechRows, language } = await prepareSpeechRows(options);
+    const speech = await speechOptions(config, deps);
+    if (!speech.available) throw fail(speech.reason);
+    const selected = options.voice ? speech.voices.find(item => item.id === options.voice && item.language === language) : speech.voices.find(item => item.default && item.language === language);
+    if (!selected) throw fail('所选音色不存在或与口播语言不一致，请重新选择。');
+    return alignCaptionSpeech(config, {
+        ...options, speechRows, language, provider, label, voice: selected.id,
+        produce: async (row, index, temporary) => {
+            const textFile = path.join(temporary, `sentence-${index}.txt`);
+            const audio = path.join(temporary, `sentence-${index}.aiff`);
+            await fs.writeFile(textFile, row.text, { mode: 0o600 });
+            await command(config, '/usr/bin/say', ['-v', selected.id, '-r', '180', '-f', textFile, '-o', audio], deps);
+            return audio;
+        },
+    }, deps);
+}
+
+const CLONE_LANGUAGE = { zh: 'Chinese', en: 'English' };
+
+/** Same timeline as system speech, but each sentence is spoken by the saved voice sample. */
+export async function synthesizeClonedCaptionSpeech(config, options = {}, deps = {}) {
+    if (typeof options.reference !== 'string' || !options.reference || typeof options.referenceText !== 'string' || !options.referenceText.trim()) {
+        throw fail('缺少已保存的音色或它的原话。');
+    }
+    if (typeof deps.speak !== 'function') throw fail('没有可用的语音合成。');
+    const { speechRows, language } = await prepareSpeechRows(options);
+    const spokenLanguage = CLONE_LANGUAGE[language];
+    return alignCaptionSpeech(config, {
+        ...options, speechRows, language, provider: 'qwen-tts', label: '已保存音色（qwen-tts）', voice: options.voice || 'default',
+        produce: async (row, index, temporary) => {
+            const audio = path.join(temporary, `sentence-${index}.wav`);
+            try {
+                await deps.speak({
+                    text: row.text, reference: options.reference, referenceText: options.referenceText,
+                    language: spokenLanguage, outPath: audio, options: {},
+                });
+            } catch (error) {
+                cancelled(deps.signal);
+                throw error;
+            }
+            cancelled(deps.signal);
+            return audio;
+        },
+    }, deps);
 }

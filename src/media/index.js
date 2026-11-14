@@ -6,6 +6,7 @@ import { getProvider, MEDIA_TASKS } from './config.js';
 import { ID_RE, KIND_PREFIX, land } from './land.js';
 import { normalizeMediaRequest, assertCapabilities, validateRequestFiles, validateMediaFileResult, validateTranscriptResult } from './contracts.js';
 import { httpFetch } from '../http.js';
+import { resolveSpeechReference } from '../voice-profile.js';
 
 function withNetwork(config, deps = {}) {
     return { ...deps, env: config.env ?? process.env, fetchImpl: httpFetch(config.proxy, deps.fetchImpl) };
@@ -165,10 +166,16 @@ export async function mediaTranscribe(config, { slug, from, id, language, force,
 
 export async function mediaSpeech(config, flags = {}, deps = {}) {
     if (!flags.text) throw appError('INVALID_INPUT', 'media:speech 需要 --text。');
-    const { entry, provider, request } = await prepareRequest(config, 'speech', {
-        text: flags.text,
+    const saved = await resolveSpeechReference(config, {
+        providerId: config.media.speech.provider,
         reference: flags.reference,
         referenceText: flags.referenceText,
+        voiceId: flags.voiceId,
+    });
+    const { entry, provider, request } = await prepareRequest(config, 'speech', {
+        text: flags.text,
+        reference: saved.reference,
+        referenceText: saved.referenceText,
         language: flags.language,
         voice: flags.voice,
         outPath: flags.out,
@@ -179,6 +186,7 @@ export async function mediaSpeech(config, flags = {}, deps = {}) {
     const result = await validateMediaFileResult(raw, provider);
     return {
         command: 'media:speech', provider: result.provider, path: result.path,
+        ...(saved.voiceId ? { voiceId: saved.voiceId } : {}),
         next: `remake media:land <slug> --kind audio --from ${result.path} --intent "口播" --provider ${result.provider}`,
     };
 }

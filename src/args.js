@@ -7,7 +7,8 @@ const COMMANDS = new Set([
     'check', 'captions', 'normalize', 'studio', 'timeline',
     'media:doctor', 'media:prepare', 'media:image', 'media:video', 'media:speech', 'media:transcribe', 'media:land',
     'video:new', 'video:fork', 'video:list', 'video:render', 'video:import', 'video:add', 'video:pack', 'video:unpack', 'video:remix', 'video:generate',
-    'template:script',
+    'template:script', 'template:voice',
+    'voice:save', 'voice:list',
     'agent:config', 'agent:doctor', 'agent:plan', 'agent:run',
     'agent:status', 'agent:logs', 'agent:cancel',
     'repro:config', 'repro:doctor', 'repro:list', 'repro:init', 'repro:teacher',
@@ -176,6 +177,10 @@ Reproduction options:
   video:remix <slug>         另存为新模板 --title 名称 [--video 包名 --style 样式.json]；清除个人输入
   video:generate <slug>      Agent 生成新模板 --title 名称 --prompt 修改要求 [--video 包名 --target Agent --mode derive|revise]
   template:script <slug>     导出提词稿 [--video 包名 --lang zh|en --format txt|srt|json|cards --out FILE]
+  template:voice <slug>      用已保存音色按字幕生成口播并写入模板 [--video 包名 --lang zh|en --voice-id ID]
+  voice:save --from WAV --text TEXT
+                             保存自己的音色样本，并设为以后的默认音色 [--id ID --force]
+  voice:list                 查看已保存的音色；没有记录时不创建文件
   media:doctor                Show configured image/video/speech/transcribe providers and probe them [--task NAME]
   media:prepare --task NAME --request FILE
                               本地检查素材需求、能力与输入文件，输出工具交接信息；不生成、不探活
@@ -184,7 +189,8 @@ Reproduction options:
   media:video --request FILE [--out FILE]
                               按配置生成视频片段；--task-id ID 代替 --request 继续查询已有任务
   media:speech --text TEXT    Synthesize speech with the configured provider
-                              [--reference WAV --reference-text TEXT --language L --voice NAME --out FILE.wav]
+                              [--reference WAV --reference-text TEXT --voice-id ID --language L --voice NAME --out FILE.wav]
+                              qwen-tts 未传参考音频时使用 voice:save 保存的默认音色
   media:transcribe <slug> --from <audio>
                               Transcribe with the configured provider into assets/<id>.transcript.json [--id ID --language L --force]
   media:land <slug> --kind image|video|audio --from FILE --intent TEXT --provider NAME
@@ -241,6 +247,7 @@ Options:
   --reference FILE           media:speech 的参考 WAV
   --reference-text TEXT      media:speech 参考音频对应的台词
   --voice NAME               media:speech 的系统音色
+  --voice-id ID              使用 voice:save 保存的音色；省略时用默认音色
   --request FILE             media:prepare / media:video 的素材需求 JSON；内部相对路径按工作区解析
   --require CAPABILITY       media:image / media:video / media:speech / media:transcribe 的额外能力要求，可重复
   --stop --status             Studio preview lifecycle

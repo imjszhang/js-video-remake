@@ -262,7 +262,35 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         write(`已生成: ${data.path}`);
         write(`provider: ${data.provider}`);
         if (data.taskId) write(`任务 ID: ${data.taskId}`);
+        if (data.voiceId) write(`音色: ${data.voiceId}`);
         if (data.next) write(`下一步: ${data.next}`);
+        return;
+    }
+    if (data?.command === 'voice:list') {
+        if (!data.voices.length) {
+            write('还没有保存的音色。');
+            write('remake voice:save --from 参考.wav --text "录音里的原话"');
+            return;
+        }
+        write(`已保存 ${data.voices.length} 个音色，默认 ${data.defaultId}。`);
+        for (const voice of data.voices) {
+            const text = [...voice.text];
+            write(`  ${voice.id}${voice.default ? '（默认）' : ''}  ${Number(voice.duration).toFixed(1)} 秒  ${voice.file}`);
+            write(`  原话: ${text.length > 80 ? `${text.slice(0, 80).join('')}…` : voice.text}`);
+        }
+        return;
+    }
+    if (data?.command === 'voice:save') {
+        write(`已保存音色 ${data.id}（${Number(data.duration).toFixed(1)} 秒），并设为默认。`);
+        write(`文件: ${data.file}`);
+        write('qwen-tts 的 media:speech 会使用它。按模板字幕念稿：remake template:voice <slug> --video <包名>。');
+        return;
+    }
+    if (data?.command === 'template:voice') {
+        write(`已用音色 ${data.voiceId} 按字幕生成口播：${data.audio?.path || ''}`);
+        const sentences = `${data.language === 'en' ? '英文' : '中文'} · ${data.count} 句`;
+        write(data.adjustedCount ? `${sentences} · ${data.adjustedCount} 句已加快以匹配时间窗` : sentences);
+        write('每句都会请求语音服务。网页里的「根据字幕生成口播」仍使用系统音色。');
         return;
     }
     if (data?.command === 'media:transcribe') {

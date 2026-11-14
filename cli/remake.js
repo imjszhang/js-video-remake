@@ -21,7 +21,8 @@ import { studioProduction, timelineProduction } from '../src/studio.js';
 import { runDoctor } from '../src/doctor.js';
 import { appError } from '../src/errors.js';
 import { mediaDoctor, mediaPrepare, mediaImage, mediaVideo, mediaLand, mediaSpeech, mediaTranscribe } from '../src/media/index.js';
-import { addVideoAsset, checkVideo, forkVideo, importVideo, listVideosCommand, newVideo, packVideo, renderVideo, unpackVideo, remixTemplate, getTemplatePromptScript } from '../src/videos.js';
+import { addVideoAsset, checkVideo, forkVideo, importVideo, listVideosCommand, newVideo, packVideo, renderVideo, unpackVideo, remixTemplate, getTemplatePromptScript, generateClonedTemplateVoice } from '../src/videos.js';
+import { listVoiceProfiles, saveVoiceProfile } from '../src/voice-profile.js';
 
 export async function execute(parsed, env = process.env, deps = {}) {
     if (parsed.help || !parsed.command) return { help: true };
@@ -188,6 +189,24 @@ export async function execute(parsed, env = process.env, deps = {}) {
         await fs.mkdir(path.dirname(out), { recursive: true });
         await fs.writeFile(out, script.content, { flag: 'wx' });
         return ok({ ...script, command: 'template:script', content: undefined, text: undefined, out });
+    }
+    if (parsed.command === 'template:voice') {
+        if (parsed.positionals.length !== 1) throw appError('INVALID_INPUT', 'template:voice 需要一个制作 slug。');
+        return ok(await generateClonedTemplateVoice(config, {
+            slug: parsed.positionals[0], name: parsed.flags.video,
+            language: parsed.flags.lang || 'zh', voiceId: parsed.flags.voiceId,
+        }, deps));
+    }
+    if (parsed.command === 'voice:list') {
+        if (parsed.positionals.length) throw appError('INVALID_INPUT', 'voice:list 不接受位置参数。');
+        return ok(await listVoiceProfiles(config));
+    }
+    if (parsed.command === 'voice:save') {
+        if (parsed.positionals.length) throw appError('INVALID_INPUT', 'voice:save 不接受位置参数。');
+        if (!parsed.flags.from || !parsed.flags.text) throw appError('INVALID_INPUT', 'voice:save 需要 --from 参考 WAV 和 --text 录音里的原话。');
+        return ok(await saveVoiceProfile(config, {
+            from: parsed.flags.from, text: parsed.flags.text, id: parsed.flags.id, force: !!parsed.flags.force,
+        }));
     }
     if (parsed.command === 'video:unpack') {
         if (parsed.positionals.length !== 1) throw appError('INVALID_INPUT', 'video:unpack 需要一个 .video 文件路径。');

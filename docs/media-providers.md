@@ -260,7 +260,17 @@ node cli/remake.js media:land <slug> --kind video --from ./result.mp4 \
 
 ### 语音合成
 
-默认是 `macos-say`：用 macOS 系统音色把台词合成 WAV，不上传参考音频。`qwen-tts` 向兼容接口 `POST /v1/audio/speech` 提交台词、参考 WAV 和参考台词。两条都走 `media:speech`，生成后用 `media:land --kind audio` 登记。切换时替换整个 `media.speech` 对象。`qwen-tts` 的 doctor 在配置了 `healthUrl` 时才会请求健康检查；没有健康检查 URL 时只核对本地配置，不表示服务或额度可用。模板工作台的「根据字幕生成口播」使用这里选中的 provider：`qwen-tts` 需要在页面上传参考音频和原话，`macos-say` 继续选择系统音色。两种都会按字幕时间窗对齐成整段口播。
+默认是 `macos-say`：用 macOS 系统音色把台词合成 WAV，不上传参考音频。`qwen-tts` 向兼容接口 `POST /v1/audio/speech` 提交台词、参考 WAV 和参考台词。两条都走 `media:speech`，生成后用 `media:land --kind audio` 登记。切换时替换整个 `media.speech` 对象。`qwen-tts` 的 doctor 在配置了 `healthUrl` 时才会请求健康检查；没有健康检查 URL 时只核对本地配置，不表示服务或额度可用。
+
+可以把一段自己的录音存成音色，供以后的 `qwen-tts` 调用复用。参考音频仍须是 16-bit PCM WAV，时长 1–30 秒，不超过 12 MiB；`--text` 必须是这段录音里的原话。保存后的文件在工作区 `voices/<id>.wav`，记录在 `voices.json`，两者都只留在本机。后保存的音色成为默认。`media:speech` 没有另传 `--reference` 时使用默认音色，也可以用 `--voice-id` 指定；这次命令自己带了参考音频时，不读取已保存音色。
+
+```bash
+node cli/remake.js voice:save --from 我的声音.wav --text "参考音频里的原话"
+node cli/remake.js voice:list
+node cli/remake.js media:speech --text "要念的台词" --out speech.wav
+```
+
+`template:voice <slug> --video <包名>` 用这份音色按模板字幕逐句合成，并把每句放回原时间窗，结果写入该模板的口播素材。每一句都会请求语音服务。网页模板工作台里的「根据字幕生成口播」仍使用 macOS 系统语音，不读取已保存音色。
 
 ```bash
 node cli/remake.js media:doctor --task speech

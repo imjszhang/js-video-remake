@@ -119,7 +119,7 @@ npm start
 - **网页对比与导出对比不同。** 网页按相同秒数同步播放原片和复刻版，短片结束后保留尾帧；导出的竖屏对比片需指定共同播放范围，不自动拉伸时长。详见[对比导出](docs/production-workflow.md#竖屏对比预览)。
 - **素材服务按需接入。** 默认出图为 Codex 内置生图、视频片段为 ComfyUI MCP、转写为 MLX Whisper；前两者由 Agent 调用工具。另有可选 API 适配器，支持范围与验证状态见[素材生成](docs/media-providers.md)。使用生成服务前需配置对应工具并明确授权费用。
 - **局域网共用 ComfyUI。** 配置项目专用设备令牌和 `media.video.hubUrl` / `hubTokenFile`，由 `media:doctor --task video` 检查工具与远端状态。直接使用 Codex、Claude Code、Cursor 时，可运行 `node scripts/configure-mcp-hub.mjs` 登记连接；使用 `agent:run` 时，在 `agent-runtime.json` 显式设置 `mcp.projectHub: true`，只载入项目的 `comfy-hub`，不继承其他 MCP。旧直连配置继续兼容，Hub 结果先下载到本机再落地。操作见 [Hub 接入说明](docs/media-providers.md#通过-mcp-hub-连接-comfyui)。
-- **模板填写遵循固定时间轴。** 改字幕后需重新录制或生成匹配的口播；改变分句、时长或场景结构应进入模板改造流程。系统音色不克隆人物声音；选中 qwen-tts 时用上传的参考音频克隆音色。
+- **模板填写遵循固定时间轴。** 改字幕后需重新录制或生成匹配的口播；改变分句、时长或场景结构应进入模板改造流程。网页里的「根据字幕生成口播」使用 macOS 系统音色。命令行可以 `voice:save` 保存自己的一段录音，再用 `template:voice` 按字幕以该音色念稿；这需要把语音合成设为 `qwen-tts`，每一句都会请求语音服务。
 - **自动复刻需要评审。** 技术检查通过不代表视觉还原达标。方法配方的独立生成与历史完整工程回放分别记录，回放不计为独立生成。
 
 ## 命令与详细文档

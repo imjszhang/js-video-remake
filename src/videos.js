@@ -1054,6 +1054,30 @@ export async function generateTemplateVoice(config, { slug, name, voice, languag
     }
 }
 
+/** CLI only. Reads the saved voice sample and speaks the template captions with qwen-tts. */
+export async function generateClonedTemplateVoice(config, { slug, name, language = 'zh', voiceId } = {}, deps = {}) {
+    if (config.media?.speech?.provider !== 'qwen-tts') {
+        throw appError('MEDIA_UNAVAILABLE', '按已保存音色念稿需要把 media.speech.provider 设为 qwen-tts。网页里的「根据字幕生成口播」仍使用系统音色。');
+    }
+    const { loadVoiceProfile } = await import('./voice-profile.js');
+    const profile = await loadVoiceProfile(config, voiceId);
+    const { getProvider } = await import('./media/config.js');
+    const { httpFetch } = await import('./http.js');
+    const provider = getProvider('speech', 'qwen-tts', deps.providers);
+    const pkg = await resolveVideo(config, slug, name);
+    const speak = (request) => provider.synthesize(config.media.speech.settings, request, {
+        ...deps, signal: deps.signal, fetchImpl: httpFetch(config.proxy, deps.fetchImpl),
+    });
+    const { synthesizeClonedCaptionSpeech } = await import('./template-speech.js');
+    const result = await generateTemplateVoice(config, { slug, name: pkg.name, voice: profile.id, language }, {
+        ...deps,
+        synthesizeCaptionSpeech: (innerConfig, args, innerDeps) => synthesizeClonedCaptionSpeech(innerConfig, {
+            ...args, reference: profile.file, referenceText: profile.text, voice: profile.id,
+        }, { ...innerDeps, speak }),
+    });
+    return { command: 'template:voice', slug, video: pkg.name, voiceId: profile.id, referenceFile: profile.relative, ...result };
+}
+
 export async function saveTemplateCaptions(config, { slug, name, rows, revision, inputs } = {}) {
     const pkg = await editorPackage(config, { slug, name });
     await editableTemplate(pkg);

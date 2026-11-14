@@ -6,8 +6,8 @@
 
 ### 新增
 
+- 可以保存自己的音色样本，再按字幕用这个音色念稿。`remake voice:save --from 参考.wav --text "录音里的原话"` 把 16-bit PCM WAV 和原话记到本机 `voices/`，`voice:list` 只读查看。`media:speech` 在 provider 为 `qwen-tts` 且没有另传参考音频时使用默认音色。`remake template:voice <slug> --video <包名>` 按模板字幕逐句合成，对齐时间窗后写入该模板的口播。网页里的「根据字幕生成口播」仍使用 macOS 系统音色。样本和 `voices.json` 只留在本机。
 - 素材任务新增语音合成。默认 provider 是 `macos-say`，使用 macOS 系统音色；可选 `qwen-tts`，用参考 WAV 和对应台词克隆声音并返回 WAV。命令是 `remake media:speech`。
-- 模板工作台「根据字幕生成口播」跟随 `media.speech`。选中 `qwen-tts` 时上传 1–30 秒参考音频和其中的原话，逐句克隆并对齐字幕时间；选中 `macos-say` 时仍使用系统音色。
 - 项目可以配置 SOCKS5 代理：`video-remake.json` 的 `proxy` 或环境变量 `VIDEO_REMAKE_PROXY`。配置后，程序自己发出的非本机 HTTP(S) 请求经该代理连接，`localhost` 和 `127.0.0.1` 仍直连。MLX 健康检查在配置了密钥文件时会带上 `Authorization`。
 - 模板工作台可以导出提词稿：按当前字幕和个人信息生成只含念稿内容的纯文本、SRT、结构化 JSON 或大字提词卡，供外部提词器、平板或打印使用。已合成版本同样可以导出，不会写入或修改模板包。
 - 新增命令 `remake template:script <slug> --video <包名> [--lang zh|en --format txt|srt|json|cards --out FILE]`，不加 `--out` 时直接输出到标准输出，便于管道或重定向。

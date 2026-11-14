@@ -36,6 +36,8 @@ reproduction-capabilities.local.json
 
 # Private workspace data stays local, including project source and metadata.
 /catalog.json
+/voices.json
+/voices/
 /sources.json
 /productions/*
 !/productions/.gitkeep

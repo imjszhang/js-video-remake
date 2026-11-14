@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { speechOptions, synthesizeCaptionSpeech } from '../src/template-speech.js';
+import { speechOptions, synthesizeCaptionSpeech, synthesizeClonedCaptionSpeech } from '../src/template-speech.js';
 
 const voices = 'Tingting            zh_CN    # 你好\nSamantha            en_US    # Hello\nBad News            en_US    # Hi\nEddy (中文（台湾）)    zh_TW    # 你好\nAlice               it_IT    # Ciao';
 async function fixture(t, { durations = [1, 1], onCall } = {}) {
@@ -86,6 +86,34 @@ test('English blank sentences stay silent, while empty scripts and unknown ident
     const other = await fixture(t);
     await assert.rejects(synthesizeCaptionSpeech(other.config, { rows: rows.map(row => ({ ...row, en: '' })), duration: 8, language: 'en', outputFile: other.outputFile }, other.deps), /没有可朗读的英文/);
     await assert.rejects(synthesizeCaptionSpeech(other.config, { rows, duration: 8, outputFile: other.outputFile }, other.deps), /第 1 句.*name/);
+});
+
+test('saved voice speaks each caption without the system voice and keeps the timeline', async t => {
+    const f = await fixture(t);
+    const spoken = [];
+    const result = await synthesizeClonedCaptionSpeech(f.config, {
+        rows, identity: { name: '小张[[rate 999]]' }, duration: 8, outputFile: f.outputFile,
+        reference: '/voices/default.wav', referenceText: '参考原话', voice: 'default',
+    }, {
+        ...f.deps,
+        speak: async (request) => {
+            spoken.push(request);
+            await fs.writeFile(request.outPath, 'cloned wav');
+        },
+    });
+    assert.equal(result.provider, 'qwen-tts');
+    assert.equal(result.voice, 'default');
+    assert.equal(result.count, 2);
+    assert.equal(result.firstAt, 1);
+    assert.equal(spoken.length, 2);
+    assert.equal(spoken[0].language, 'Chinese');
+    assert.equal(spoken[0].referenceText, '参考原话');
+    assert.match(spoken[0].text, /小张/);
+    assert.doesNotMatch(spoken[0].text, /\[\[|\]\]|\{\{/);
+    assert.equal(f.state.timeline.length, 8 * 48000 * 2);
+    assert.ok(f.state.timeline.subarray(48000 * 2, 2 * 48000 * 2).every(byte => byte === 1));
+    assert.ok(!f.state.calls.some(call => call.executable === '/usr/bin/say'));
+    assert.equal(await fs.readFile(f.outputFile, 'utf8'), 'fixture wav');
 });
 
 test('cancellation cleans temporary speech data and existing outputs cannot be overwritten', async t => {

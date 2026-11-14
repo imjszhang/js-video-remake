@@ -32,7 +32,7 @@ node cli/remake.js media:doctor
 
 视频默认保留 `comfy-mcp`。可配置 `media.video.hubUrl` / `hubTokenFile` 经 MCP Hub 连接，Agent 直接调用 MCP 工具。直接客户端使用已注册连接；`agent:run` 需在 `agent-runtime.json` 显式设置 `mcp.projectHub: true`，只加载项目的 `comfy-hub`，不继承全局 MCP，也不依赖客户端注册文件。Hub 的素材与任务 ID、下载落地方式见 [ComfyUI 指南](providers/comfy-mcp.md)，不套用直连的本机路径参数。新增 [aliyun-video](providers/aliyun-video.md)、[runway-video](providers/runway-video.md)、[minimax-video](providers/minimax-video.md)，通过 `media:video --request <需求.json>` 执行文生或单张首帧图生视频；`--task-id` 只继续查询/下载。实际执行仍需当前任务的生成授权；新增的三套 API 适配器 doctor 不调用服务。
 
-语音合成默认是 `macos-say`（[指南](providers/macos-say.md)），只用 macOS 系统音色。可选 [qwen-tts](providers/qwen-tts.md)：需要参考 WAV 和这段参考音频里的原话，向配置的 HTTP 接口提交后取回 WAV。实际合成仍需当前任务授权。模板工作台的「根据字幕生成口播」使用当前选中的语音 provider：`qwen-tts` 在页面收集参考音频和原话，再逐句对齐字幕时间。
+语音合成默认是 `macos-say`（[指南](providers/macos-say.md)），只用 macOS 系统音色。可选 [qwen-tts](providers/qwen-tts.md)：需要参考 WAV 和这段参考音频里的原话，向配置的 HTTP 接口提交后取回 WAV。参考音可用 `voice:save` 存成默认音色，之后 `media:speech` 和 `template:voice` 复用它。实际合成仍需当前任务授权。模板工作台的「根据字幕生成口播」仍使用 macOS 系统音色，不读取已保存音色。
 
 转写默认保留 `mlx-whisper`。可选 [aliyun-asr](providers/aliyun-asr.md)、[faster-whisper](providers/faster-whisper.md)、[azure-speech](providers/azure-speech.md)，都通过同一个 `media:transcribe` 入口交付字幕来源 JSON。按当前选择的指南核对语言、部署和认证；本地检查通过不等于模型已缓存、云端权限或额度可用。不自动切换 provider、下载模型或重试收费任务。
 
