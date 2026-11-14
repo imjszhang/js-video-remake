@@ -143,6 +143,16 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         write('使用 reference:list 查看清单，再用 start <参考 ID> --as <制作名> 建项。');
         return;
     }
+    if (data?.command === 'reference:look') {
+        write(`已从参考 ${data.referenceId} 抽出 ${data.frameCount} 帧。`);
+        write(`目录: ${data.dir}`);
+        write(`时间: ${data.range.start}–${data.range.end} 秒`);
+        write(`取样: ${data.selection === 'scene' ? '场景变化' : '均匀'}`);
+        write(`字幕: ${data.captions === 'aligned' ? '已对齐到帧' : '没有可用字幕'}`);
+        for (const warning of data.warnings || []) write(`警告: ${warning}`);
+        write(`下一步: ${data.next}`);
+        return;
+    }
     if (data?.command === 'reference:list') {
         if (!data.references.length) write('本地参考清单为空，请用 reference:import 导入视频文件或 manifest。');
         for (const item of data.references) {

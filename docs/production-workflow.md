@@ -12,7 +12,7 @@ node cli/remake.js start local-demo --as my-video
 node cli/remake.js video:new my-video --width 1080 --height 1920 --fps 30 --duration 10
 ```
 
-`start` 建立 `BRIEF.md`、`TREATMENT.md`、`PROGRESS.md`、`assets/`、`drafts/` 和空的 `videos/`；同一参考可创建多份制作。`video:new` 另建代码视频包，默认从 `code-v1` 开始。创建目录和包不会自动分析或复刻原片；接下来需要自己或让 Agent 编写场景、动画和时间轴，并准备素材。参考理解笔记 `ANALYSIS.md`、`TIMELINE.md`、`transcript.json` 写在参考目录，CLI 不代写，不写回原片目录。
+`start` 建立 `BRIEF.md`、`TREATMENT.md`、`PROGRESS.md`、`assets/`、`drafts/` 和空的 `videos/`；同一参考可创建多份制作。`video:new` 另建代码视频包，默认从 `code-v1` 开始。创建目录和包不会自动分析或复刻原片；接下来需要自己或让 Agent 编写场景、动画和时间轴，并准备素材。`reference:look <参考ID>` 可以只读抽出原片的时间戳帧，写到参考目录的 `look/`。`ANALYSIS.md`、`TIMELINE.md`、`transcript.json` 仍写在参考目录：抽帧命令不代写笔记，也不写回原片所在目录。
 
 素材流程为：生成或准备文件 → `media:land` 登记到制作 → `video:add` 复制进包 → 在场景中使用，详见[素材生成](media-providers.md)。字幕需要先有转写结果，才能执行 `captions`；这些是按需操作，不是创建包后必须依次执行的步骤。
 

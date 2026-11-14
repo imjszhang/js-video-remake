@@ -132,14 +132,14 @@ node cli/remake.js reference:list
 node cli/remake.js list
 ```
 
-`reference:list`、`list`、`get` 和默认的 `reference:scan` 不会创建缺失的台账。导入参考、创建制作等写操作才会建立对应记录。`node cli/remake.js doctor` 检查本地清单与工具；`media:doctor` 检查所选素材服务。
+`reference:list`、`list`、`get` 和默认的 `reference:scan` 不会创建缺失的台账。导入参考、创建制作等写操作才会建立对应记录。已登记的原片可以用 `reference:look <参考ID>` 抽时间戳帧到该参考的 `look/`；没有这条参考时不创建台账。`node cli/remake.js doctor` 检查本地清单与工具；`media:doctor` 检查所选素材服务。
 
 | 文档 | 内容 |
 | --- | --- |
 | [工作台与部署](docs/workbench.md) | 网页导航、播放对比、台账读取、端口、常驻服务与代理 |
 | [.video 模板](docs/video-template.md) | 导入、填写素材、字幕编辑、Agent 改造、独立使用与打包格式 |
 | [字幕口播](docs/template-speech.md) | 系统音色或 qwen-tts、字幕时间窗、口播生成与限制 |
-| [本地参考清单](docs/local-references.md) | 本地导入、批量清单、扫描、链接下载及可选网关 |
+| [本地参考清单](docs/local-references.md) | 本地导入、批量清单、扫描、链接下载、原片抽帧及可选网关 |
 | [制作工程、渲染与交付](docs/production-workflow.md) | 代码视频包、素材接入、检查、版本冻结、对比片与目录结构 |
 | [素材生成](docs/media-providers.md) | 出图、出片、转写的配置、能力、验证状态和素材落地 |
 | [Agent 执行](docs/agent-runtime.md) | Agent 配置、任务上下文、执行权限、状态与日志 |

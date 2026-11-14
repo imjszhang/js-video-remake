@@ -29,7 +29,7 @@ node cli/remake.js media:speech --text "要念的台词" \
   --language Chinese --out speech.wav
 ```
 
-语言可以不填，由服务使用自己的默认值。已确认能通过语言检查的值包括 `auto`、`Chinese`、`English`、`Japanese`、`Korean`、`German`、`French`、`Russian`。请求固定发送 `response_format=wav`。
+语言可以不填，由服务使用自己的默认值。已确认能通过语言检查的值包括 `auto`、`Chinese`、`English`、`Japanese`、`Korean`、`German`、`French`、`Russian`。请求固定发送 `response_format=wav`。单句遇到 HTTP 502、503 或 504 时，同一句最多再请求四次，间隔 3、8、15、30 秒。`template:voice` 会把已成功的句子留在视频包 `.work/speech-cache/`，失败后重跑不重复请求这些句子。
 
 同一段参考音可以先保存，以后不用每次再传文件和原话。后保存的音色成为默认。`voices/` 和 `voices.json` 只留在本机。
 

@@ -10,6 +10,24 @@ const MAX_TEXT = 2000;
 
 const invalid = (message) => appError('INVALID_INPUT', message);
 const failed = (message) => appError('MEDIA_FAILED', message);
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const SPEECH_ATTEMPTS = 5;
+const RETRY_DELAYS_MS = [3000, 8000, 15000, 30000];
+
+function pause(ms, signal) {
+    if (signal?.aborted) throw appError('VIDEO_CANCELLED', '口播生成已取消。');
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(appError('VIDEO_CANCELLED', '口播生成已取消。'));
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
 
 function baseUrl(value) {
     let url;
@@ -106,24 +124,30 @@ export async function synthesize(settings, request, { fetchImpl = fetch, timeout
         response_format: 'wav',
         ...(request.language || settings.language ? { language: request.language || settings.language } : {}),
     };
-    let response;
-    try {
-        response = await fetchImpl(url, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs),
-            redirect: 'error',
-        });
-    } catch (error) {
-        if (typeof error.code === 'string' && error.code.includes('_')) throw error;
-        throw failed(`语音合成服务不可达: ${error.message}`);
-    }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!response.ok) {
+    const payload = JSON.stringify(body);
+    let bytes;
+    for (let attempt = 1; attempt <= SPEECH_ATTEMPTS; attempt++) {
+        let response;
+        try {
+            response = await fetchImpl(url, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+                body: payload,
+                signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs),
+                redirect: 'error',
+            });
+        } catch (error) {
+            if (typeof error.code === 'string' && error.code.includes('_')) throw error;
+            throw failed(`语音合成服务不可达: ${error.message}`);
+        }
+        bytes = Buffer.from(await response.arrayBuffer());
+        if (response.ok) break;
         let message = bytes.toString('utf8').slice(0, 400);
         try { message = JSON.parse(bytes.toString('utf8'))?.error?.message || message; } catch { /* keep text */ }
-        throw failed(`语音合成失败 HTTP ${response.status}: ${message}`);
+        if (!RETRYABLE_STATUS.has(response.status) || attempt === SPEECH_ATTEMPTS) {
+            throw failed(`语音合成失败 HTTP ${response.status}: ${message}`);
+        }
+        await pause(RETRY_DELAYS_MS[attempt - 1], signal);
     }
     if (bytes.length > MAX_AUDIO_BYTES) throw failed('语音合成结果超过 32 MiB。');
     return { path: await saveWav(bytes, request.outPath), provider: 'qwen-tts.speak' };

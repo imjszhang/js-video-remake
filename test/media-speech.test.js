@@ -58,6 +58,21 @@ test('qwen-tts 用参考音频提交克隆请求并保存 WAV', async (t) => {
     assert.equal(seen.body.ref_audio_base64, wav().toString('base64'));
     assert.equal((await fs.readFile(result.path)).subarray(0, 4).toString(), 'RIFF');
     assert.equal(result.provider, 'qwen-tts.speak');
+    let calls = 0;
+    const retried = await qwenTts.synthesize({
+        baseUrl: 'http://speech.test', apiKeyFile: keyFile,
+    }, {
+        text: '你好', reference, referenceText: '你', options: {},
+    }, {
+        fetchImpl: async () => {
+            calls += 1;
+            return calls === 1
+                ? new Response('<html>502</html>', { status: 502 })
+                : new Response(wav(), { status: 200 });
+        },
+    });
+    assert.equal(calls, 2);
+    assert.equal((await fs.readFile(retried.path)).subarray(0, 4).toString(), 'RIFF');
     const short = path.join(dir, 'short.wav');
     await fs.writeFile(short, wav(0.2));
     await assert.rejects(qwenTts.synthesize({

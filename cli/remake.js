@@ -10,6 +10,7 @@ import { bindVideo } from '../src/bind.js';
 import { scanReferences } from '../src/reference-scan.js';
 import { downloadReference, downloadDoctor } from '../src/downloads/index.js';
 import { importReference, listReferences } from '../src/references.js';
+import { lookReference } from '../src/reference-look.js';
 import { ingestUrl } from '../src/ingest.js';
 import { getEntry, listCatalog, startProduction } from '../src/start.js';
 import { projectPaths } from '../src/paths.js';
@@ -90,6 +91,17 @@ export async function execute(parsed, env = process.env, deps = {}) {
     if (parsed.command === 'reference:list') {
         if (parsed.positionals.length) throw appError('INVALID_INPUT', 'reference:list 不接受位置参数。');
         return ok(await listReferences(config));
+    }
+    if (parsed.command === 'reference:look') {
+        if (parsed.positionals.length !== 1) throw appError('INVALID_INPUT', 'reference:look 需要一个参考 ID。');
+        return ok(await lookReference(config, {
+            id: parsed.positionals[0],
+            start: parsed.flags.start,
+            end: parsed.flags.end,
+            at: parsed.flags.at || [],
+            width: parsed.flags.width,
+            maxFrames: parsed.flags.maxFrames,
+        }, deps));
     }
     if (parsed.command === 'reference:import') {
         if (parsed.positionals.length > 1) throw appError('INVALID_INPUT', 'reference:import 只接受一个本地文件，或 --manifest FILE。');

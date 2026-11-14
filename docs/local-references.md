@@ -139,6 +139,23 @@ node cli/remake.js reference:list
 
 优先级为命令行、环境变量、配置文件、默认值。下载目录相对工作区解析，默认总超时为 30 分钟。修改下载工具不会改变参考清单来源，也不会自动切换到网关。
 
+## 查阅原片画面
+
+已登记的参考可以用本机 FFmpeg 抽帧，供人对照画面写笔记。没有这条参考时不会创建台账。
+
+```bash
+node cli/remake.js reference:look <参考ID>
+node cli/remake.js reference:look <参考ID> --start 0:30 --end 2:00 --at 0:45 --at 1:10 --width 1024 --max-frames 100
+```
+
+命令只读 `SOURCE.json` 里的 `videoPath`，把 JPEG 和 `index.json` 写到该参考的 `look/`。原片不复制、不软链，台账和 `SOURCE.json` 不改。`--start`、`--end`、`--at` 接受秒数或 `MM:SS`、`HH:MM:SS`，必须落在原片时长内。`--at` 可重复，这些时间点先抽，并计入张数上限。默认最多 100 张、宽 1024，上限 250 张。画面按场景变化取样；候选太少或检测失败时，改为在时间范围内均匀取点，最多每秒 2 帧。
+
+`index.json` 记录原片路径、抽帧时的 `sha256` 和字节数、时间范围，以及每帧的相对路径、原片时间和是否由 `--at` 指定。文件大小与 `SOURCE.bytes` 一致且已有哈希时沿用该哈希；大小变了或缺少哈希时才重新计算，结果只写入 `index.json`。再次运行会换掉整个 `look/`；抽帧中途失败则保留上一份结果。
+
+已有的 `SOURCE.absSubs` VTT 和参考目录里的 `transcript.json` 会按时间附到对应帧上。字幕缺失、打不开或格式不对时，帧仍然输出，并在结果里给出警告。这条命令不转写，也不把原片送到外部服务。网页参考库没有抽帧入口。
+
+`look/` 是画面证据。镜头、版式和声音的理解仍写在参考目录的 `ANALYSIS.md`、`TIMELINE.md`，由阅读这些帧的 Agent 写成，不写回原片所在目录。
+
 ## 查询和关联
 
 ```bash

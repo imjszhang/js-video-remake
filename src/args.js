@@ -2,7 +2,7 @@ import { appError } from './errors.js';
 
 const COMMANDS = new Set([
     'doctor', 'ingest', 'bind', 'start', 'list', 'get',
-    'reference:list', 'reference:import', 'reference:scan', 'reference:download', 'download:doctor',
+    'reference:list', 'reference:import', 'reference:scan', 'reference:download', 'reference:look', 'download:doctor',
     'paths', 'deliver', 'compare',
     'check', 'captions', 'normalize', 'studio', 'timeline',
     'media:doctor', 'media:prepare', 'media:image', 'media:video', 'media:speech', 'media:transcribe', 'media:land',
@@ -23,7 +23,7 @@ const COMMANDS = new Set([
     'harness:retry', 'harness:check', 'harness:review', 'harness:judge', 'harness:publish', 'harness:status',
 ]);
 const BOOLEANS = new Set(['force', 'json', 'checkLogin', 'dryRun', 'baseline', 'evidence', 'run', 'step', 'stop', 'status', 'skipInstall', 'recursive', 'import']);
-const REPEATABLE = new Set(['input', 'skill', 'image', 'require', 'select']);
+const REPEATABLE = new Set(['input', 'skill', 'image', 'require', 'select', 'at']);
 const CONFIG_KEYS = {
     config: 'configPath',
     workspace: 'workspace',
@@ -146,6 +146,7 @@ Reproduction options:
                               批量导入本地清单 [--asset-root DIR]
   reference:scan <dir>        只读扫描视频 [--recursive]；加 --import 登记，可用 --select 相对路径 多选
   reference:download <url>    使用独立下载适配器下载并登记参考 [--quality 720|1080]
+  reference:look <id>         只读抽取已登记原片的时间戳帧 [--start T --end T --at T（可重复） --width N --max-frames N]
   download:doctor             离线检查下载工具，不请求视频站点
   doctor                      检查本地清单、所选数据源与工具
   ingest <url>                Queue via source API, poll, then bind

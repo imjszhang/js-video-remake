@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -254,10 +255,30 @@ export async function synthesizeClonedCaptionSpeech(config, options = {}, deps =
     if (typeof deps.speak !== 'function') throw fail('没有可用的语音合成。');
     const { speechRows, language } = await prepareSpeechRows(options);
     const spokenLanguage = CLONE_LANGUAGE[language];
+    let cacheDir = null;
+    let scope = '';
+    try {
+        const referenceStat = await fs.stat(options.reference);
+        cacheDir = path.join(path.dirname(options.outputFile), '..', '..', '.work', 'speech-cache');
+        await fs.mkdir(cacheDir, { recursive: true });
+        scope = createHash('sha256').update([options.voice || '', referenceStat.size, referenceStat.mtimeMs, options.referenceText, spokenLanguage].join('\0')).digest('hex').slice(0, 16);
+    } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+    }
     return alignCaptionSpeech(config, {
         ...options, speechRows, language, provider: 'qwen-tts', label: '已保存音色（qwen-tts）', voice: options.voice || 'default',
         produce: async (row, index, temporary) => {
             const audio = path.join(temporary, `sentence-${index}.wav`);
+            const cached = cacheDir ? path.join(cacheDir, `${scope}-${createHash('sha256').update(row.text).digest('hex').slice(0, 20)}.wav`) : null;
+            if (cached) {
+                try {
+                    await fs.access(cached);
+                    await fs.copyFile(cached, audio);
+                    return audio;
+                } catch (error) {
+                    if (error.code !== 'ENOENT') throw error;
+                }
+            }
             try {
                 await deps.speak({
                     text: row.text, reference: options.reference, referenceText: options.referenceText,
@@ -268,6 +289,7 @@ export async function synthesizeClonedCaptionSpeech(config, options = {}, deps =
                 throw error;
             }
             cancelled(deps.signal);
+            if (cached) await fs.copyFile(audio, cached);
             return audio;
         },
     }, deps);
