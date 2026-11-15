@@ -43,7 +43,7 @@ node cli/remake.js media:doctor
 - 原片只读：通过 `SOURCE.json` 指针引用，不复制、不 symlink `video.mp4`。
 - `catalog.json`、`productions/`、`references/`、`deliverables/`、`assets/`、`reproductions/`、`video-remake.json`、`agent-runtime.json`、`.env*` 是本机私有数据，不提交，也不要把其中的本机路径、内网地址或密钥写进公开文件。
 - `reference:list`、`list`、`get` 和默认的 `reference:scan` 为只读查询，不创建缺失的 `catalog.json`；`reference:scan --import`、导入或下载参考、创建制作等写操作才建立台账。
-- 出图、出片会花费额度，需要用户在当前任务中明确授权。
+- 出图、出片、转写和语音合成会花费额度。`agent:run` 会把项目当前素材 provider 的使用授权写进该次任务；任务明确禁止时仍然停止。直接打开的会话仍需用户在当前任务中明确授权。
 
 ## Agent skill
 

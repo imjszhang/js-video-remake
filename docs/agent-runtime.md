@@ -113,7 +113,7 @@ npm run agent:doctor
 npm run agent:run -- --instruction '仅调用 comfy-hub 的 server_info，报告远端状态，不生成素材'
 ```
 
-`plan` 只记录不含令牌的连接请求描述，不读取令牌、不访问 Hub，也不创建 MCP 文件。`doctor` 和 `run` 会验证既有设备令牌与远端服务；配置或连接无效时直接报错，不改用直连或加载其他 MCP。`run` 会实际调用选定模型执行指令，上面的示例只检查服务状态。
+`plan` 只记录不含令牌的连接请求描述，不读取令牌、不访问 Hub，也不创建 MCP 文件。`doctor` 和 `run` 会验证既有设备令牌与远端服务；配置或连接无效时直接报错，不改用直连或加载其他 MCP。项目配置了 `proxy` 时，Hub 检查和非本机 Hub 的调用经该 SOCKS 代理：执行进程只连接本机 Hub 转发端口。Codex 订阅的模型请求和内置出图优先使用 `media.image.proxy` 里的 HTTP 代理；没有时才用 Codex 本机配置里的 HTTP 代理。项目的 SOCKS 出口不能访问该服务，运行时又会从 shell 环境移除代理变量；`agent:run` 启动 Codex 时把这条 HTTP 代理写回进程和 shell。出片的 `comfy-hub` 使用 `media.video.proxy`，未设置时用顶层 `proxy`。运行时把工作区标为未受信任时会关掉 MCP，启动时改为受信任，以允许本次注入的 `comfy-hub`。`run` 会实际调用选定模型执行指令，上面的示例只检查服务状态。
 
 Hub 令牌只在执行时通过子进程凭据环境传入，不拼入 prompt 或命令参数。需要 MCP 临时配置时，文件中只保存环境变量引用，退出时清理；项目包装层和 runtime 都对已知凭据脱敏，运行记录与日志不保存令牌明文。
 
@@ -145,6 +145,8 @@ npm run agent:plan -- --target claude-local --production my-face \
 runtime 默认收紧自动技能发现。需要技能时可用 `--skill` 明确传入；Claude Code 的 `claude-config` 和 DeepSeek Harness 可通过 `contextMode: project` 使用其支持的项目上下文。外部 CLI 不继承发起方的对话、附件、已连接 MCP 工具或插件能力；需要的资料应作为项目文件传入。MCP 默认关闭，仅在 `mcp.projectHub: true` 时由包装层提供当前项目的 `comfy-hub`，不导入其他全局或项目 MCP。
 
 任务提示要求保留已有制作、草稿和交付版本，但这是一条提示约定，不是文件覆盖保护。包装层不会在成功后自动导入产物、发布、重试或恢复任务；任务本身仍按用户指令执行。
+
+`agent:run` 和 `agent:plan` 会把项目当前四项素材 provider 的名称、执行方式和调用入口写进提示，并授权本次任务使用它们。程序执行的 provider 仍由 `media:image`、`media:video`、`media:speech`、`media:transcribe` 读取本机密钥；`comfy-mcp` 只在 `mcp.projectHub: true` 时通过已加载的 `comfy-hub` 调用。提示不包含密钥、令牌、密钥文件路径或服务地址。用户任务明确禁止某一类生成时，该禁止优先于这项授权。与任务无关时不应调用。
 
 ## 状态、日志与取消
 

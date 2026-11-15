@@ -1073,12 +1073,12 @@ export async function generateClonedTemplateVoice(config, { slug, name, language
     }
     const { loadVoiceProfile } = await import('./voice-profile.js');
     const profile = await loadVoiceProfile(config, voiceId);
-    const { getProvider } = await import('./media/config.js');
+    const { getProvider, mediaProxy } = await import('./media/config.js');
     const { httpFetch } = await import('./http.js');
     const provider = getProvider('speech', 'qwen-tts', deps.providers);
     const pkg = await resolveVideo(config, slug, name);
     const speak = (request) => provider.synthesize(config.media.speech.settings, request, {
-        ...deps, signal: deps.signal, fetchImpl: httpFetch(config.proxy, deps.fetchImpl),
+        ...deps, signal: deps.signal, fetchImpl: httpFetch(mediaProxy(config, 'speech'), deps.fetchImpl),
     });
     const { synthesizeClonedCaptionSpeech } = await import('./template-speech.js');
     const result = await generateTemplateVoice(config, { slug, name: pkg.name, voice: profile.id, language }, {

@@ -30,6 +30,19 @@ function fakeFetch(routes) {
     return { impl, calls };
 }
 
+test('each media provider can choose its own proxy or a direct connection', () => {
+    const media = resolveMediaConfig({
+        image: { provider: 'openai-image', proxy: 'http://127.0.0.1:8081' },
+        video: { proxy: 'socks5://10.1.0.8:1080' },
+        speech: { provider: 'qwen-tts', proxy: 'direct', baseUrl: 'http://speech.test' },
+    }, {}, WS);
+    assert.equal(media.image.proxy, 'http://127.0.0.1:8081/');
+    assert.equal(media.video.proxy, 'socks5://10.1.0.8:1080');
+    assert.equal(media.speech.proxy, false);
+    assert.equal(Object.hasOwn(media.transcribe, 'proxy'), false);
+    assert.throws(() => resolveMediaConfig({ image: { proxy: 'http://user:pw@127.0.0.1:8081' } }, {}, WS), /不带凭据/);
+});
+
 test('media defaults to this project\'s providers', () => {
     const media = resolveMediaConfig({}, {}, WS);
     assert.deepEqual(Object.fromEntries(Object.entries(media).map(([task, entry]) => [task, entry.provider])), DEFAULT_PROVIDERS);

@@ -211,6 +211,26 @@ test('agent plan reads instruction files and registered production/reference con
     }
 });
 
+test('agent plan authorizes configured media providers without revealing credentials', async (t) => {
+    const { config } = await fixture(t);
+    config.media = {
+        image: { provider: 'openai-image', settings: { apiKeyFile: '/secret/openai-image-key', baseUrl: 'http://10.1.2.3/v1', model: 'gpt-image-2' } },
+        video: { provider: 'comfy-mcp', settings: { hubUrl: 'http://10.1.2.3/mcp/comfyui', hubTokenFile: '/secret/comfy-hub.token' } },
+        speech: { provider: 'qwen-tts', settings: { apiKeyFile: '/secret/whisper-key', baseUrl: 'http://10.1.2.3:8888' } },
+        transcribe: { provider: 'mlx-whisper', settings: { apiKeyFile: '/secret/whisper-key', transcriptionUrl: 'http://10.1.2.3:8888/v1/audio/transcriptions' } },
+    };
+    const result = await executeAgent(config, 'plan', { instruction });
+    const prompt = result.plan.execution.process.stdin;
+    assert.match(prompt, /本次运行已授权使用下列项目素材 provider/);
+    assert.match(prompt, /出图 openai-image（program）：执行 node cli\/remake\.js media:image/);
+    assert.match(prompt, /语音合成 qwen-tts（program）：执行 node cli\/remake\.js media:speech/);
+    assert.match(prompt, /转写 mlx-whisper（program）：执行 node cli\/remake\.js media:transcribe/);
+    assert.match(prompt, /出片 comfy-mcp（agent）：按 remake-media 技能/);
+    for (const secretValue of ['/secret/openai-image-key', '/secret/comfy-hub.token', '/secret/whisper-key', '10.1.2.3', 'gpt-image-2']) {
+        assert.equal(prompt.includes(secretValue), false, secretValue);
+    }
+});
+
 test('agent doctor checks the executable and credential availability without starting a run', async (t) => {
     const { config, workspace, agentHome } = await fixture(t);
     const before = await snapshot(workspace);

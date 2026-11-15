@@ -53,7 +53,7 @@ node cli/remake.js media:prepare --task video --request <request.json> --json
 ## 门禁
 
 - 先确认制作 slug（`catalog.json` / `productions/<slug>/`）。没有就停，让用户 `remake start`。
-- 先问再出图、出片。Brief 写了「不花额度」或未授权生成时，默认停。只查看或适配本 skill 不代表授权生成。已有明确授权时不必重复确认。
+- 出图、出片、转写和语音合成需要当前任务授权。`agent:run` 提示中的「本次运行已授权使用下列项目素材 provider」就是这项授权，覆盖其中列出的 provider，不必再问。Brief 写了「不花额度」，或用户任务明确禁止某一类生成时，仍然停止。只查看或适配本 skill 不代表授权生成。
 - 只用配置选中的 provider。所选 provider 不可用时说明缺什么并停下，不改用其他生成渠道凑数，除非用户点名。
 - 只按所选 provider 的执行方式和指南调用，不用其他插件、工具或素材缓存替代项目的素材落地流程，除非用户点名。
 - 原片只读。不复制、不 symlink `video.mp4`。

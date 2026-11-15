@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { appError } from './errors.js';
 import { httpFetch } from './http.js';
-import { getProvider } from './media/config.js';
+import { getProvider, mediaProxy } from './media/config.js';
 import { pcmWavInfo } from './media/providers/qwen-tts.js';
 import { rendererEnvironment, runFixedCommand } from './repro/render.js';
 
@@ -48,7 +48,7 @@ async function qwenSpeechOptions(config, engine, deps) {
             command(config, 'ffmpeg', ['-version'], deps, 15000),
             command(config, 'ffprobe', ['-version'], deps, 15000),
         ]);
-        const check = await engine.provider.doctor(engine.settings, { fetchImpl: httpFetch(config.proxy, deps.fetchImpl), env: config.env || process.env });
+        const check = await engine.provider.doctor(engine.settings, { fetchImpl: httpFetch(mediaProxy(config, 'speech'), deps.fetchImpl), env: config.env || process.env });
         if (!check.ready) return { ...base, available: false, reason: check.hint || '语音合成服务未就绪。' };
         return { ...base, available: true };
     } catch (error) {
@@ -220,7 +220,7 @@ export async function synthesizeCaptionSpeech(config, options = {}, deps = {}) {
                     await engine.provider.synthesize(engine.settings, {
                         text: row.text, reference: preparedReference, referenceText,
                         language: QWEN_LANGUAGE[language], outPath: audio,
-                    }, { fetchImpl: httpFetch(config.proxy, deps.fetchImpl), signal: deps.signal });
+                    }, { fetchImpl: httpFetch(mediaProxy(config, 'speech'), deps.fetchImpl), signal: deps.signal });
                 } catch (error) {
                     cancelled(deps.signal);
                     if (error.code === 'VIDEO_CANCELLED') throw error;

@@ -2,14 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { appError } from '../errors.js';
 import { openProduction } from '../start.js';
-import { getProvider, MEDIA_TASKS } from './config.js';
+import { getProvider, MEDIA_TASKS, mediaProxy } from './config.js';
 import { ID_RE, KIND_PREFIX, land } from './land.js';
 import { normalizeMediaRequest, assertCapabilities, validateRequestFiles, validateMediaFileResult, validateTranscriptResult } from './contracts.js';
 import { httpFetch } from '../http.js';
 import { resolveSpeechReference } from '../voice-profile.js';
 
-function withNetwork(config, deps = {}) {
-    return { ...deps, env: config.env ?? process.env, fetchImpl: httpFetch(config.proxy, deps.fetchImpl) };
+function withNetwork(config, task, deps = {}) {
+    return { ...deps, env: config.env ?? process.env, fetchImpl: httpFetch(mediaProxy(config, task), deps.fetchImpl) };
 }
 
 export const SKILL_DIR = '.agents/skills/remake-media';
@@ -58,7 +58,7 @@ export async function mediaDoctor(config, { task } = {}, deps = {}) {
     const media = {};
     for (const name of tasks) {
         const { entry, provider } = selected(config, name, deps);
-        const check = await provider.doctor(entry.settings, withNetwork(config, deps));
+        const check = await provider.doctor(entry.settings, withNetwork(config, name, deps));
         media[name] = {
             provider: provider.id,
             label: provider.label,
@@ -99,7 +99,7 @@ export async function mediaImage(config, flags, deps = {}) {
     }, deps);
     if (provider.execution !== 'program') throw appError('MEDIA_AGENT_REQUIRED', `请由 Agent 按 ${SKILL_DIR}/${provider.guide} 生成图片。`);
     const result = await validateMediaFileResult(await provider.generateImage(entry.settings, request,
-        withNetwork(config, deps)), provider);
+        withNetwork(config, 'image', deps)), provider);
     return { command: 'media:image', provider: result.provider, path: result.path, sourcePath: result.sourcePath };
 }
 
@@ -124,7 +124,7 @@ export async function mediaVideo(config, flags = {}, deps = {}) {
         }, deps));
     }
     if (provider.execution !== 'program') throw appError('MEDIA_AGENT_REQUIRED', `请由 Agent 按 ${SKILL_DIR}/${provider.guide} 生成或查询视频。`);
-    const context = withNetwork(config, deps);
+    const context = withNetwork(config, 'video', deps);
     let raw;
     if (flags.taskId) {
         if (!provider.resumeVideo) throw appError('MEDIA_CAPABILITY_UNSUPPORTED', '所选视频适配器不支持按任务 ID 继续查询。');
@@ -152,7 +152,7 @@ export async function mediaTranscribe(config, { slug, from, id, language, force,
         }
     }
     const json = validateTranscriptResult(await provider.transcribe(entry.settings, request,
-        withNetwork(config, deps)), request);
+        withNetwork(config, 'transcribe', deps)), request);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, `${JSON.stringify(json, null, 2)}\n`);
     return {
@@ -182,7 +182,7 @@ export async function mediaSpeech(config, flags = {}, deps = {}) {
         require: flags.require,
     }, deps);
     if (provider.execution !== 'program') throw appError('MEDIA_AGENT_REQUIRED', `请由 Agent 按 ${SKILL_DIR}/${provider.guide} 合成语音。`);
-    const raw = await provider.synthesize(entry.settings, request, withNetwork(config, deps));
+    const raw = await provider.synthesize(entry.settings, request, withNetwork(config, 'speech', deps));
     const result = await validateMediaFileResult(raw, provider);
     return {
         command: 'media:speech', provider: result.provider, path: result.path,

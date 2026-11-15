@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import * as runtime from 'js-agent-runtime';
 import { loadAgentConfig, selectAgentTarget, agentStorageRoot } from './agent-config.js';
@@ -9,6 +10,12 @@ import { assertSlug } from './schema.js';
 import { appError } from './errors.js';
 import { agentCredentialEnvironment } from './agent-credentials.js';
 import { planAgentHub, loadAgentHub, AGENT_HUB_TOKEN_REF } from './agent-hub.js';
+import { startHubRelay } from './hub-relay.js';
+import { codexHttpProxy } from './codex-launch.js';
+import { httpFetch } from './http.js';
+import { MEDIA_TASKS, getProvider, mediaProxy } from './media/config.js';
+
+const codexWrapper = fileURLToPath(new URL('./codex-trust-wrapper.mjs', import.meta.url));
 
 const ACTIVE = new Set(['preparing', 'running']);
 const MAX_INPUT_BYTES = 256 * 1024;
@@ -80,6 +87,48 @@ function timeout(value, fallback) {
     return number;
 }
 
+const MEDIA_LABELS = { image: '出图', video: '出片', speech: '语音合成', transcribe: '转写' };
+
+// Names and invocation routes only. Settings can contain key paths and service addresses.
+function mediaAuthorization(config, hubReady) {
+    const media = config.media;
+    if (!media || typeof media !== 'object') return '';
+    const lines = MEDIA_TASKS.flatMap((task) => {
+        const selected = media[task];
+        if (!selected || typeof selected.provider !== 'string') return [];
+        let provider;
+        try { provider = getProvider(task, selected.provider); }
+        catch { return []; }
+        const route = provider.execution === 'program'
+            ? `执行 node cli/remake.js media:${task}，由项目读取本机配置和密钥`
+            : task === 'video' && hubReady
+                ? '使用本次已加载的 comfy-hub MCP，不要读取令牌或客户端配置'
+                : '按 remake-media 技能中该 provider 的指南使用当前会话已有工具';
+        return [`- ${MEDIA_LABELS[task]} ${selected.provider}（${provider.execution}）：${route}`];
+    });
+    if (!lines.length) return '';
+    return [
+        '本次运行已授权使用下列项目素材 provider。任务需要相应素材时直接使用，不必再次询问。',
+        '与本次任务无关时不要调用。用户任务明确禁止某一类生成时，以用户任务为准。',
+        '不要改用未列出的渠道，不要读取或输出密钥、令牌和本机配置。',
+        ...lines,
+    ].join('\n');
+}
+
+function hubFetch(config, deps) {
+    return httpFetch(mediaProxy(config, 'video'), deps.fetchImpl);
+}
+
+function executionForRun(execution, { url, executable } = {}) {
+    const request = execution.request;
+    const target = executable ? { ...request.target, harness: { ...request.target.harness, executable } } : request.target;
+    return runtime.plan({
+        runId: request.runId, workspace: request.workspace, prompt: request.prompt, target,
+        timeoutMs: request.timeoutMs, stateDir: execution.stateDir,
+        ...(request.mcpServers ? { mcpServers: request.mcpServers.map((server, index) => index === 0 && url ? { ...server, url } : server) } : {}),
+    });
+}
+
 function operationalEnv(env) {
     return Object.fromEntries(['PATH', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy']
         .filter(key => typeof env[key] === 'string').map(key => [key, env[key]]));
@@ -133,9 +182,10 @@ async function buildPlan(config, options, runId = 'preview') {
         '参考原片通过 SOURCE.json 指针读取；不要复制原片。成片和对比片使用本机 HyperFrames。',
         '保留已有制作、草稿和交付版本；不因执行成功自动定稿、发布或发送消息。',
         '如缺少工具、素材或证据，请明确报告。完成时说明修改、验证结果和未完成事项。',
-        hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接和授权由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会自动读取项目设置。' : '',
+        hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会自动读取项目设置。' : '',
         production ? `本次制作: ${production}` : '',
         ...[...files.values()].map(file => `\n--- 项目输入 ${file.path} (sha256:${file.sha256}) ---\n${file.content}\n--- 输入结束 ---`),
+        mediaAuthorization(config, Boolean(hubPlan)),
         `\n用户任务:\n${instruction.trim()}`,
     ].filter(Boolean).join('\n');
     if (/mcp_hub_[A-Za-z0-9_-]{32,128}/u.test(prompt)) {
@@ -249,6 +299,7 @@ async function runAgent(config, options, deps) {
     const save = () => writeJson(path.join(runDir, 'run.json'), redactor.value(record));
     let timer;
     let created = false;
+    let relay;
     try {
         await fs.mkdir(runDir, { mode: 0o700 });
         created = true;
@@ -264,16 +315,32 @@ async function runAgent(config, options, deps) {
             });
         }, 100);
         timer.unref();
-        const hub = await loadAgentHub(task.hubPlan, { fetchImpl: deps.fetchImpl, signal: controller.signal });
+        const hub = await loadAgentHub(task.hubPlan, { fetchImpl: hubFetch(config, deps), signal: controller.signal });
+        const videoProxy = mediaProxy(config, 'video');
+        if (hub && typeof videoProxy === 'string' && videoProxy.startsWith('socks5:')) relay = await startHubRelay({ proxy: videoProxy, upstream: hub.server.url, signal: controller.signal });
+        const codexBin = task.target.harness.adapter === 'codex' ? task.target.harness.executable : '';
+        let execution = task.execution;
+        if (relay || codexBin) execution = executionForRun(task.execution, { url: relay?.url, executable: codexBin ? codexWrapper : undefined });
         if (hub) {
             redactor.add(hub.token);
             record.mcp = hub.summary;
         }
+        const childEnv = operationalEnv(env);
+        if (codexBin && !childEnv.HTTPS_PROXY && !childEnv.https_proxy) {
+            const imageProxy = mediaProxy(config, 'image');
+            const proxy = typeof imageProxy === 'string' && /^https?:/i.test(imageProxy) ? imageProxy : codexHttpProxy(task.target.backend.codexHome);
+            if (proxy) {
+                for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) childEnv[key] = proxy;
+                childEnv.NO_PROXY = ['localhost', '127.0.0.1', '::1', childEnv.NO_PROXY].filter(Boolean).join(',');
+                childEnv.no_proxy = childEnv.NO_PROXY;
+            }
+        }
+        if (codexBin) childEnv.VIDEO_REMAKE_CODEX_BIN = codexBin;
         record.status = 'running';
         await save();
-        record.execution = await runtime.run(task.execution, {
+        record.execution = await runtime.run(execution, {
             signal: controller.signal, runDir: path.join(runDir, 'runtime'),
-            env: operationalEnv(env),
+            env: childEnv,
             resolveCredential: ref => hub && ref === AGENT_HUB_TOKEN_REF ? hub.token : env[ref],
             onEvent: deps.onEvent ? event => deps.onEvent(redactor.value(event)) : undefined,
         });
@@ -288,6 +355,7 @@ async function runAgent(config, options, deps) {
         await save();
     } finally {
         clearInterval(timer);
+        await relay?.close();
         deps.signal?.removeEventListener('abort', abort);
         process.removeListener('SIGINT', abort);
         process.removeListener('SIGTERM', abort);
@@ -347,7 +415,7 @@ export async function executeAgent(config, action, options = {}, deps = {}) {
         }
         if (hubPlan) {
             try {
-                const hub = await loadAgentHub(hubPlan, { fetchImpl: deps.fetchImpl, signal: deps.signal });
+                const hub = await loadAgentHub(hubPlan, { fetchImpl: hubFetch(config, deps), signal: deps.signal });
                 readiness.checks.push({ name: 'mcp-hub', status: 'passed', message: `comfy-hub 已就绪，${hub.summary.tools} 个授权工具 / ComfyUI ${hub.summary.version || '可用'}` });
                 readiness.mcp = hub.summary;
             } catch (error) {

@@ -210,7 +210,7 @@ node cli/remake.js media:transcribe demo --from speech.wav --require word-timest
 
 以上表格是默认工具的设置。MLX 的 `model`（默认 `whisper-large-v3`）和默认 `language` 只能写在配置文件里；单次转写仍可用 `--language` 覆盖语言。配置中的路径支持 `~/`，相对路径按工作区解析。未知 provider、未知任务名或不属于所选 provider 的设置会报 `CONFIG_INVALID`。`video-remake.json` 已被 gitignore；本机路径、地址和密钥只放在这里或环境变量中。`media:doctor` 的可公开设置由各 provider 的 `publicSettings` 声明，不打印密钥文件和安装路径。
 
-访问这些服务若必须经过代理，在配置文件顶层设置 `proxy`，或用环境变量 `VIDEO_REMAKE_PROXY` 覆盖。值是不带凭据的 `socks5://主机:端口`。程序发出的素材请求、素材网关请求和模板接口探测都会使用它；`localhost`、`127.0.0.1` 和 `::1` 仍直接连接。主机名由代理解析。
+访问这些服务若必须经过代理，在配置文件顶层设置 `proxy`，或用环境变量 `VIDEO_REMAKE_PROXY` 覆盖。顶层值是不带凭据的 `socks5://主机:端口`，作为各素材任务的默认代理。某个任务可以在自己的 `media.<任务>.proxy` 里另选：`socks5://主机:端口`、`http://主机:端口`、`https://主机:端口`，或 `direct` 表示不走代理。例如出图走本机 HTTP 代理，而出片、转写和语音继续用顶层 SOCKS。`localhost`、`127.0.0.1` 和 `::1` 仍直接连接。主机名由代理解析。素材网关和模板接口探测仍使用顶层代理。
 
 ### 通过 MCP Hub 连接 ComfyUI
 

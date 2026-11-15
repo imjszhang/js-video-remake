@@ -17,6 +17,7 @@ import azureSpeech from './providers/azure-speech.js';
 import qwenTts from './providers/qwen-tts.js';
 import macosSay from './providers/macos-say.js';
 import { parseHubUrl } from './mcp-hub.js';
+import { parseSocksUrl } from './socks.js';
 
 // Registered providers per task. Add a module under providers/ and list it here.
 export const PROVIDERS = {
@@ -58,6 +59,29 @@ function fieldValue(type, value, name, workspace) {
     return trimmed;
 }
 
+export function parseMediaProxy(value, name) {
+    if (value === 'direct') return false;
+    if (typeof value !== 'string' || !value.trim()) throw invalid(`${name} 必须是不带凭据的 socks5 或 http(s) URL，或 direct。`);
+    const trimmed = value.trim();
+    if (trimmed.startsWith('socks5:')) {
+        parseSocksUrl(trimmed);
+        return new URL(trimmed).href.replace(/\/$/, '');
+    }
+    let url;
+    try { url = new URL(trimmed); } catch { throw invalid(`${name} 必须是不带凭据的 socks5 或 http(s) URL，或 direct。`); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+        throw invalid(`${name} 必须是不带凭据的 socks5 或 http(s) URL，或 direct。`);
+    }
+    return url.href;
+}
+
+/** A task proxy replaces the project proxy. `false` means connect directly. */
+export function mediaProxy(config, task) {
+    const selected = config.media?.[task];
+    if (selected && Object.hasOwn(selected, 'proxy')) return selected.proxy || undefined;
+    return config.proxy;
+}
+
 export function getProvider(task, id, providers = PROVIDERS) {
     const provider = providers[task]?.[id];
     if (!provider) throw invalid(`Unknown media.${task}.provider: ${id}（可选: ${Object.keys(providers[task] || {}).join(', ')}）`);
@@ -74,14 +98,14 @@ export function resolveMediaConfig(raw = {}, env = process.env, workspace = proc
         if (!section || typeof section !== 'object' || Array.isArray(section)) throw invalid(`media.${task} must be an object.`);
         const id = env[PROVIDER_ENV[task]] || section.provider || DEFAULT_PROVIDERS[task];
         const provider = getProvider(task, id, providers);
-        const unknown = Object.keys(section).find((key) => key !== 'provider' && !provider.fields[key]);
+        const unknown = Object.keys(section).find((key) => key !== 'provider' && key !== 'proxy' && !provider.fields[key]);
         if (unknown) throw invalid(`media.${task}.${unknown} is not a ${id} setting.`);
         const settings = {};
         for (const [key, field] of Object.entries(provider.fields)) {
             const value = (field.env && env[field.env]) || (section[key] ?? field.default);
             if (value !== undefined) settings[key] = fieldValue(field.type, value, `media.${task}.${key}`, workspace);
         }
-        media[task] = { provider: id, settings };
+        media[task] = { provider: id, settings, ...(section.proxy === undefined ? {} : { proxy: parseMediaProxy(section.proxy, `media.${task}.proxy`) }) };
     }
     return media;
 }

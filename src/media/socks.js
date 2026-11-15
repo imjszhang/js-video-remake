@@ -182,11 +182,9 @@ async function openTunnel(proxy, host, port, signal) {
     }
 }
 
-export async function socksFetch(proxy, url, init = {}, tlsOptions = {}) {
-    const target = new URL(url);
-    if (!['http:', 'https:'].includes(target.protocol)) throw invalid('经 socks5 代理访问时，地址需要使用 HTTP 或 HTTPS。');
+async function exchange(stream, reader, target, init, { absolute = false } = {}) {
     const { signal, ...options } = init;
-    const request = new Request(url, options);
+    const request = new Request(target.href, options);
     const body = Buffer.from(await request.arrayBuffer());
     const headers = new Headers(request.headers);
     headers.set('host', target.host);
@@ -195,28 +193,79 @@ export async function socksFetch(proxy, url, init = {}, tlsOptions = {}) {
     headers.delete('transfer-encoding');
     if (body.length) headers.set('content-length', String(body.length));
     else headers.delete('content-length');
-    let head = `${request.method} ${target.pathname}${target.search} HTTP/1.1\r\n`;
+    const path = absolute ? target.href : `${target.pathname}${target.search}`;
+    let head = `${request.method} ${path} HTTP/1.1\r\n`;
     headers.forEach((value, key) => { head += `${key}: ${value}\r\n`; });
     head += '\r\n';
+    await writeAll(stream, head);
+    if (body.length) await writeAll(stream, body);
+    return readHttp(reader);
+}
 
-    const tunnel = await openTunnel(parseSocksUrl(proxy), target.hostname, Number(target.port || (target.protocol === 'https:' ? 443 : 80)), signal);
+function secureStream(socket, hostname, signal, tlsOptions) {
+    const stream = tls.connect({ socket, servername: hostname, ALPNProtocols: ['http/1.1'], ...tlsOptions });
+    if (signal?.aborted) stream.destroy();
+    else signal?.addEventListener('abort', () => stream.destroy(), { once: true });
+    return stream;
+}
+
+export async function socksFetch(proxy, url, init = {}, tlsOptions = {}) {
+    const target = new URL(url);
+    if (!['http:', 'https:'].includes(target.protocol)) throw invalid('经 socks5 代理访问时，地址需要使用 HTTP 或 HTTPS。');
+    const tunnel = await openTunnel(parseSocksUrl(proxy), target.hostname, Number(target.port || (target.protocol === 'https:' ? 443 : 80)), init.signal);
     let stream = tunnel.socket;
     let reader = tunnel.reader;
     try {
         if (target.protocol === 'https:') {
             const leftover = reader.release();
             if (leftover.length) tunnel.socket.unshift(leftover);
-            stream = tls.connect({ socket: tunnel.socket, servername: target.hostname, ALPNProtocols: ['http/1.1'], ...tlsOptions });
-            if (signal?.aborted) stream.destroy();
-            else signal?.addEventListener('abort', () => stream.destroy(), { once: true });
+            stream = secureStream(tunnel.socket, target.hostname, init.signal, tlsOptions);
             await once(stream, 'secureConnect');
             reader = readerFor(stream);
         }
-        await writeAll(stream, head);
-        if (body.length) await writeAll(stream, body);
-        return await readHttp(reader);
+        return await exchange(stream, reader, target, init);
     } finally {
-        signal?.removeEventListener('abort', tunnel.onAbort);
+        init.signal?.removeEventListener('abort', tunnel.onAbort);
+        stream.destroy();
+    }
+}
+
+async function readConnect(reader) {
+    let data = Buffer.alloc(0);
+    while (!data.includes('\r\n\r\n')) {
+        data = Buffer.concat([data, await reader.read(1)]);
+        if (data.length > 8192) throw new Error('HTTP 代理响应头过大');
+    }
+    const at = data.indexOf('\r\n\r\n');
+    const status = Number(/^HTTP\/\d(?:\.\d)? (\d{3})/.exec(data.subarray(0, at).toString('latin1'))?.[1]);
+    return { status, rest: data.subarray(at + 4) };
+}
+
+/** HTTPS through an HTTP proxy. Plain HTTP targets use the absolute-form request. */
+export async function httpProxyFetch(proxy, url, init = {}) {
+    const target = new URL(url);
+    if (!['http:', 'https:'].includes(target.protocol)) throw invalid('经 HTTP 代理访问时，地址需要使用 HTTP 或 HTTPS。');
+    const proxyUrl = new URL(proxy);
+    const socket = net.connect(Number(proxyUrl.port), proxyUrl.hostname);
+    const reader = readerFor(socket);
+    let stream = socket;
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once('connect', resolve);
+            socket.once('error', reject);
+        });
+        if (target.protocol === 'https:') {
+            const port = target.port || 443;
+            await writeAll(socket, `CONNECT ${target.hostname}:${port} HTTP/1.1\r\nHost: ${target.hostname}:${port}\r\n\r\n`);
+            const reply = await readConnect(reader);
+            if (reply.status < 200 || reply.status >= 300) throw new Error(`HTTP 代理拒绝连接：${reply.status || '未知状态'}`);
+            if (reply.rest.length) socket.unshift(reply.rest);
+            stream = secureStream(socket, target.hostname, init.signal);
+            await once(stream, 'secureConnect');
+            return await exchange(stream, readerFor(stream), target, init);
+        }
+        return await exchange(socket, reader, target, init, { absolute: true });
+    } finally {
         stream.destroy();
     }
 }
