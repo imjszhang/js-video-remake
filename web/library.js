@@ -7,6 +7,13 @@ import { projectTitle, projectsInScope, filterProjects, recentProjects, libraryC
 const IMPORT_LIMIT = 100 * 1024 * 1024;
 let actions = { openProject() {}, openHome() {}, reload: async () => {} };
 
+function activityMark(project) {
+    const status = project.activity?.status;
+    if (status === 'preparing' || status === 'running') return ' · 正在制作';
+    if (status === 'timed_out' || status === 'interrupted' || status === 'failed' || status === 'cancelled') return ' · 可续接';
+    return '';
+}
+
 function renderSidebar() {
     const list = $('#projects'); list.replaceChildren();
     const projects = filterProjects(state.projects, state);
@@ -15,7 +22,7 @@ function renderSidebar() {
         const item = button(`project-item${selected ? ' active' : ''}`, undefined, () => actions.openProject(project.slug));
         item.setAttribute('aria-current', String(selected));
         const info = node('span');
-        info.append(node('strong', '', projectTitle(project)), node('small', '', `${padded(project.videos.length)} 条视频 · ${statusLabel(project)}`));
+        info.append(node('strong', '', projectTitle(project)), node('small', '', `${padded(project.videos.length)} 条视频 · ${statusLabel(project)}${activityMark(project)}`));
         item.append(node('span', 'project-icon', project.videos.length ? '▣' : '▧'), info);
         list.append(item);
     }
@@ -45,7 +52,7 @@ function projectCard(project) {
     if (poster) { const image = node('img'); image.src = poster; image.alt = ''; image.loading = 'lazy'; cover.append(image); }
     else cover.append(node('span', 'project-card-glyph', project.templatePackages?.length ? '▧' : '▷'));
     cover.append(node('span', 'project-card-status', statusLabel(project)));
-    const facts = [`${project.videos.length} 条视频`];
+    const facts = [`${project.videos.length} 条视频${activityMark(project)}`];
     if (project.templatePackages?.length) facts.push(`${project.templatePackages.length} 个模板版本`);
     const updated = shortDate(project.updatedAt);
     if (updated) facts.push(`${updated} 更新`);

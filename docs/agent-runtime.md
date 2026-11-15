@@ -123,6 +123,15 @@ Hub 令牌只在执行时通过子进程凭据环境传入，不拼入 prompt �
 
 默认载入项目根目录存在的 `AGENTS.md` 和 `README.md`。`--production SLUG` 可选：它从台账中定位制作，载入 `BRIEF.md`、存在的 `TREATMENT.md` / `PROGRESS.md`，以及绑定参考的 `SOURCE.json` 和存在的 `ANALYSIS.md` / `TIMELINE.md`。
 
+对标一条新视频时，不必先单独 `start`。下面的命令会在模型开始前建立制作、绑定参考，并把这次运行写进该项目：
+
+```bash
+npm run agent:run -- --reference local-demo --as my-video \
+  --instruction '按这条参考复刻一条竖屏短片'
+```
+
+`local-demo` 和 `my-video` 换成已登记的参考 ID 和新建制作名。制作名已存在且绑定的是同一条参考时，沿用该项目；绑的是别的参考则停止。`agent:plan` 使用同样参数时只预览，不创建目录。
+
 例如将 `my-face` 换成已有制作的 slug：
 
 ```bash
@@ -136,7 +145,18 @@ npm run agent:plan -- --target claude-local --production my-face \
 
 `NEXT_TASK.md`、`REVIEW.md` 和示例参考路径需替换为实际存在的文件。`--input`、`--skill` 可重复；`--skill` 会把指定技能文件文本加入任务，不自动附带它引用的其他文件。所有输入使用项目内的相对路径，必须是 UTF-8 普通文本文件，单文件最多 256 KiB，指令与收集的输入总计最多 1 MiB；不接受符号链接、越界路径、`.env`、已知凭据文件、本机配置或依赖目录。
 
-`--timeout-ms` 覆盖本次执行时限，范围与配置中的 `timeoutMs` 相同。`--json` 可查看完整 prompt、执行参数和输入哈希。`plan` 只读项目输入，不执行 CLI、读取 API key 或 Hub 设备令牌、创建运行目录或修改项目；启用项目 Hub 时只包含无令牌的连接请求描述。
+`--timeout-ms` 覆盖这一次进程的时限，范围与配置中的 `timeoutMs` 相同。时限到了进程会停，已经写进制作目录的文件会留下。从同一次制作接着做：
+
+```bash
+npm run agent:run -- --continue RUN_ID
+npm run agent:run -- --continue RUN_ID --instruction '把字幕改短，节奏加快'
+```
+
+第一条沿用上次任务，从磁盘上的 `PROGRESS.md` 和代码视频包继续。第二条留在同一个项目里，把新要求当作对已有结果的优化，不重做已经落地的素材。续接沿用上次的制作和目标，并重新带上当时额外指定、现在仍在的文本输入。可以另加 `--timeout-ms` 或 `--target` 覆盖。上次运行还没结束时不能续接，也不能改去另一个制作。
+
+带制作的运行从准备阶段就把状态写到该制作的 `agent-activity.json`，包括运行 ID、对标参考、任务摘要、最近说明和已经建立的代码视频包。工作台项目页因此在模型还在工作时就能看到这一轮。任务会被要求随手写入分析和视频包，不要等整次运行结束再集中落盘。刷新工作台就能看到工程；下一次 `--continue` 从这些文件接着做。
+
+`--json` 可查看完整 prompt、执行参数和输入哈希。`plan` 只读项目输入，不执行 CLI、读取 API key 或 Hub 设备令牌、创建运行目录或修改项目；启用项目 Hub 时只包含无令牌的连接请求描述。`agent:plan --continue RUN_ID` 只预览续接任务。
 
 ## 执行范围
 

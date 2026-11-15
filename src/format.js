@@ -63,6 +63,8 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         if (data.run) {
             const run = data.run;
             write(`Agent: ${run.id}  ${run.status}  ${run.target}`);
+            if (run.production) write(`制作: ${run.production}${data.openedProduction ? '（本轮新建）' : ''}`);
+            if (run.continuedFrom) write(`续接: ${run.continuedFrom}`);
             write(`记录: ${run.runDir}`);
             if (run.execution?.text) write(run.execution.text);
         } else if (data.runs) {
@@ -77,6 +79,7 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
             for (const check of data.readiness.checks) write(`${check.status}: ${check.name} — ${check.message}`);
         } else if (data.plan) {
             write(`目标: ${data.plan.target.name}${data.plan.enabled ? '' : '（已禁用）'}`);
+            if (data.plan.production) write(`制作: ${data.plan.production}${data.plan.pendingProduction ? '（运行时建立）' : ''}`);
             write(`工作区: ${data.plan.workspace}`);
             write(`权限: ${data.plan.target.harness.permission}`);
             if (data.plan.hubPlan) write(`MCP: ${data.plan.hubPlan.server.name}（${data.plan.hubPlan.server.enabledTools.length} 个工具；运行前检查连接）`);

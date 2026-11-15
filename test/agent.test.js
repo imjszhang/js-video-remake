@@ -38,6 +38,75 @@ test('agent run and doctor load only the selected key from the project local cre
     }
 });
 
+test('a production run shows its progress in the workbench and can continue from the files', async (t) => {
+    const { config, workspace } = await fixture(t);
+    await fs.mkdir(path.join(workspace, 'productions/demo/videos/demo-cut-v1'), { recursive: true });
+    await fs.writeFile(path.join(workspace, 'productions/demo/BRIEF.md'), '# brief\n');
+    await fs.writeFile(path.join(workspace, 'productions/demo/notes.md'), 'keep this note\n');
+    const catalog = JSON.parse(await fs.readFile(config.catalogPath, 'utf8'));
+    catalog.productions.push({ slug: 'demo', dir: 'productions/demo', referenceIds: [], status: 'commissioned' });
+    await fs.writeFile(config.catalogPath, JSON.stringify(catalog));
+    const first = await executeAgent(config, 'run', { instruction, production: 'demo', inputs: ['productions/demo/notes.md'], timeoutMs: 5000 });
+    const activity = JSON.parse(await fs.readFile(path.join(workspace, 'productions/demo/agent-activity.json'), 'utf8'));
+    assert.equal(activity.status, 'completed');
+    assert.equal(activity.runId, first.run.id);
+    assert.deepEqual(activity.packages, ['demo-cut-v1']);
+    assert.equal(JSON.stringify(activity).includes(secret), false);
+    const continued = await executeAgent(config, 'plan', { continueRun: first.run.id });
+    assert.equal(continued.plan.continuedFrom, first.run.id);
+    assert.match(continued.plan.instruction, /续接/);
+    assert.match(continued.plan.instruction, /Inspect this fixture/);
+    assert.ok(continued.plan.inputs.some(input => input.path === 'productions/demo/notes.md'));
+    assert.match(continued.plan.execution.request.prompt, /video:new/);
+    assert.match(continued.plan.execution.request.prompt, /--instruction/);
+    assert.equal(continued.plan.execution.request.timeoutMs, 5000);
+    const revision = await executeAgent(config, 'plan', { continueRun: first.run.id, instruction: '把字幕改短' });
+    assert.equal(revision.plan.production, 'demo');
+    assert.equal(revision.plan.continuedFrom, first.run.id);
+    assert.match(revision.plan.instruction, /优化/);
+    assert.match(revision.plan.instruction, /把字幕改短/);
+    assert.match(revision.plan.instruction, /Inspect this fixture/);
+    await assert.rejects(executeAgent(config, 'plan', { continueRun: first.run.id, reference: 'local-demo', as: 'other' }), { code: 'INVALID_INPUT' });
+    const stored = JSON.parse(await fs.readFile(path.join(first.run.runDir, 'run.json'), 'utf8'));
+    stored.status = 'running';
+    stored.owner = { pid: process.pid, hostname: os.hostname() };
+    await fs.writeFile(path.join(first.run.runDir, 'run.json'), JSON.stringify(stored));
+    await assert.rejects(executeAgent(config, 'plan', { continueRun: first.run.id }), { code: 'AGENT_BUSY' });
+});
+
+test('agent run opens a bound production before the model starts', async (t) => {
+    const { config, workspace } = await fixture(t);
+    await fs.mkdir(path.join(workspace, 'references/local-demo'), { recursive: true });
+    await fs.writeFile(path.join(workspace, 'references/local-demo/SOURCE.json'), '{"title":"fixture"}\n');
+    const catalog = JSON.parse(await fs.readFile(config.catalogPath, 'utf8'));
+    catalog.references.push(
+        { id: 'local-demo', dir: 'references/local-demo', status: 'bound' },
+        { id: 'other-ref', dir: 'references/other-ref', status: 'bound' },
+    );
+    await fs.writeFile(config.catalogPath, JSON.stringify(catalog));
+    const before = await snapshot(workspace);
+    const preview = await executeAgent(config, 'plan', { reference: 'local-demo', as: 'new-cut', instruction: '复刻这条参考' });
+    assert.equal(preview.plan.pendingProduction, true);
+    assert.equal(preview.plan.production, 'new-cut');
+    assert.equal(preview.plan.referenceId, 'local-demo');
+    assert.match(preview.plan.execution.request.prompt, /运行时会先建立制作 new-cut/);
+    assert.deepEqual(await snapshot(workspace), before);
+    const result = await executeAgent(config, 'run', { reference: 'local-demo', as: 'new-cut', instruction: '复刻这条参考' });
+    assert.equal(result.openedProduction, 'new-cut');
+    assert.equal(result.run.production, 'new-cut');
+    const activity = JSON.parse(await fs.readFile(path.join(workspace, 'productions/new-cut/agent-activity.json'), 'utf8'));
+    assert.equal(activity.runId, result.run.id);
+    assert.equal(activity.referenceId, 'local-demo');
+    assert.match(activity.instruction, /复刻这条参考/);
+    assert.match(await fs.readFile(path.join(workspace, 'productions/new-cut/PROGRESS.md'), 'utf8'), new RegExp(result.run.id));
+    assert.match(await fs.readFile(path.join(workspace, 'productions/new-cut/BRIEF.md'), 'utf8'), /references\/local-demo/);
+    const again = await executeAgent(config, 'plan', { reference: 'local-demo', as: 'new-cut', instruction: '再改一版' });
+    assert.equal(again.plan.pendingProduction, false);
+    assert.equal(again.plan.production, 'new-cut');
+    await assert.rejects(executeAgent(config, 'plan', { reference: 'local-demo', instruction: '缺制作名' }), { code: 'INVALID_INPUT' });
+    await assert.rejects(executeAgent(config, 'plan', { reference: 'other-ref', as: 'new-cut', instruction: '换参考' }), { code: 'ALREADY_EXISTS' });
+});
+
 test('explicit credentials take precedence and native targets never load the local key file', async (t) => {
     const { config, workspace } = await fixture(t);
     await fs.mkdir(path.join(workspace, '.env.agent.local'));

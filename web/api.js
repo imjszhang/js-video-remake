@@ -37,6 +37,7 @@ export const upload = (url, action, file) => post(url, action, {
 
 export const api = {
     projects: () => call('api/projects', { method: 'GET' }),
+    activity: slug => call(`api/projects/${encodeURIComponent(slug)}/activity`),
     importTemplate: (file, slug) => upload(`api/templates/import${slug ? `?${new URLSearchParams({ slug })}` : ''}`, 'import', file),
     packTemplate: (slug, name) => post(`api/projects/${encodeURIComponent(slug)}/templates/${encodeURIComponent(name)}`, 'pack'),
     adoptTemplate: (slug, name, title) => post(`api/projects/${encodeURIComponent(slug)}/packages/${encodeURIComponent(name)}/template`, 'adopt', {

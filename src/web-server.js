@@ -1,4 +1,5 @@
 import { readCatalog, writeCatalog } from './catalog.js';
+import { readProductionActivity } from './agent-activity.js';
 import { appError } from './errors.js';
 import { listVideos, packVideo, unpackVideo } from './videos.js';
 import { adoptVideo } from './template-adopt.js';
@@ -260,6 +261,15 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                 return json(response, 405, { error: '只支持读取。' });
             }
             if (url.pathname === '/api/health') return json(response, 200, { ok: true, service: 'video-remake' }, head);
+            const activityRoute = /^\/api\/projects\/([a-z0-9-]+)\/activity$/.exec(url.pathname);
+            if (activityRoute && ['GET', 'HEAD'].includes(request.method)) {
+                let catalog;
+                try { catalog = JSON.parse(await fs.readFile(path.join(workspace, 'catalog.json'), 'utf8')); }
+                catch { return json(response, 404, { error: '项目不存在。' }, head); }
+                const project = Array.isArray(catalog.productions) ? catalog.productions.find(item => item?.slug === activityRoute[1]) : null;
+                if (!project) return json(response, 404, { error: '项目不存在。' }, head);
+                return json(response, 200, { activity: await readProductionActivity(workspace, project.dir || `productions/${project.slug}`) }, head);
+            }
             if (url.pathname === '/api/projects') {
                 const { projects, warnings } = await readWebLibrary(workspace);
                 for (const project of projects) {

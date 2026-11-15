@@ -208,6 +208,20 @@
 .project-menu-panel button { display: block; width: 100%; background: none; text-align: left; padding: 9px 11px; border-radius: var(--radius-s); color: var(--ink-2); font-size: 12px; }
 .project-menu-panel button:hover { background: var(--surface-3); color: var(--ink-1); }
 
+.agent-activity {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 18px;
+    padding: 14px 16px;
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-l);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: 13px;
+    line-height: 1.6;
+}
+.agent-activity span:first-child { color: var(--ink-1); font-weight: 600; }
+
 /* ── 页签与工作区 ───────────────────────────────────── */
 .workspace-tabs {
     gap: 26px;
@@ -335,6 +349,12 @@
     background: var(--surface-1);
 }
 .library-empty h3, .empty-project h3 { color: var(--ink-2); font-weight: 500; }
+#remake-original:not([hidden]) {
+    display: block;
+    width: min(100%, 960px);
+    margin: 18px auto 0;
+    background: #000;
+}
 #notice { background: #26241b; border-color: #453f2c; color: #dcd3ae; border-radius: var(--radius-m); }
 
 /* ── 放映区微调 ─────────────────────────────────────── */

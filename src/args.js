@@ -200,7 +200,7 @@ Reproduction options:
   agent:config               Inspect local agent targets (no credentials)
   agent:doctor               Check the selected agent CLI; optional --check-login
   agent:plan                 Preview the task and execution plan without running
-  agent:run                  Execute --instruction or --instruction-file
+  agent:run                  Execute a task. --reference ID --as SLUG opens a new production first
   agent:status [run-id]       List runs or inspect one run
   agent:logs <run-id>         Read saved logs (--stream stdout|stderr|events)
   agent:cancel <run-id>       Request cancellation of an active run
@@ -211,9 +211,11 @@ Agent options:
   --instruction TEXT         Task to execute in this project
   --instruction-file FILE    Task text in a workspace-relative UTF-8 file
   --production SLUG          Include this production's brief and reference notes
+  --reference ID             With --as, open this reference as a new production before the run
   --input FILE               Include a text input; repeatable
   --skill FILE               Include an explicit skill entrypoint; repeatable
-  --timeout-ms N             Execution deadline (1000–86400000 ms)
+  --timeout-ms N             Execution deadline for this run (1000–86400000 ms)
+  --continue RUN_ID          Resume that finished run; add --instruction to revise its result
   --check-login              Probe native CLI login status (doctor only)
   --stream NAME              Log stream (default: stdout)
   --lines N                  Tail 1–10000 log lines (default: 100)

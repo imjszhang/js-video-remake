@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import * as runtime from 'js-agent-runtime';
 import { loadAgentConfig, selectAgentTarget, agentStorageRoot } from './agent-config.js';
 import { readCatalog, findProduction, findReference } from './catalog.js';
+import { startProduction } from './start.js';
 import { assertSlug } from './schema.js';
 import { appError } from './errors.js';
 import { agentCredentialEnvironment } from './agent-credentials.js';
@@ -14,6 +15,7 @@ import { startHubRelay } from './hub-relay.js';
 import { codexHttpProxy } from './codex-launch.js';
 import { httpFetch } from './http.js';
 import { MEDIA_TASKS, getProvider, mediaProxy } from './media/config.js';
+import { createActivityWriter } from './agent-activity.js';
 
 const codexWrapper = fileURLToPath(new URL('./codex-trust-wrapper.mjs', import.meta.url));
 
@@ -115,6 +117,156 @@ function mediaAuthorization(config, hubReady) {
     ].join('\n');
 }
 
+function checkpointPrompt(production, timeoutMs, referenceId, pending = false) {
+    const minutes = Math.max(1, Math.round(timeoutMs / 60000));
+    const bound = referenceId ? `，绑定参考 ${referenceId}` : '';
+    return [
+        pending
+            ? `这是计划预览：真正运行时会先建立制作 ${production}${bound}。预览本身不创建目录。`
+            : `工作台里的项目就是本次制作 ${production}${bound}。项目在这一轮开始前已经存在，进度会在制作过程中写回该目录。`,
+        `本次运行时限约 ${minutes} 分钟。到时或中止后进程会停，已经写进项目目录的文件会留下。`,
+        '每得到一段可交接的内容就立刻写入这个项目，不要等整次运行结束再集中落盘。',
+        '理解原片时写入参考目录的 ANALYSIS.md 和 TIMELINE.md。开始改画面之前，用 video:new 或 video:fork 建立代码视频包。',
+        `每完成一个阶段，把进度写到 productions/${production}/PROGRESS.md：一行「日期 时间 包名：一句话」，下面用「- 」列出已完成和下一步。`,
+        '不要把整项工作押在同一次运行里，也不要重做已经落地的素材。',
+        '中止或到时限后，用 agent:run --continue 接着做。要按新要求改已有结果时，再加上 --instruction。',
+    ].join('\n');
+}
+
+function clipTask(text, max = 4000) {
+    const value = String(text || '').trim();
+    if (value.length <= max) return value;
+    return `${value.slice(0, max)}\n…（更早的任务文本已截断）`;
+}
+
+function continuationInstruction({ id, status, priorText, original, followUp }) {
+    const revise = Boolean(followUp && followUp.trim());
+    return [
+        revise
+            ? `这是同一次制作的优化，不是新项目。上一次运行 ${id} 已结束，状态是 ${status}。磁盘上的文件和成片就是要改的结果。`
+            : `这是同一次制作的续接，不是新任务。上一次运行 ${id} 已结束，状态是 ${status}。`,
+        '磁盘上已经写出的文件、素材台账和代码视频包就是进度。先读 PROGRESS.md 和已有视频包，从中断处继续。',
+        '不要重做已经落地的出图、出片、转写和语音。',
+        priorText ? `上次结束时的说明：\n${priorText}` : '',
+        revise ? `本轮要求：\n${followUp.trim()}` : '',
+        `原任务:\n${clipTask(original)}`,
+    ].filter(Boolean).join('\n\n');
+}
+
+function localStamp(date = new Date()) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+async function ensureRunProduction(config, options, { write = false, runId = '' } = {}) {
+    if (options.continueRun) {
+        if (options.reference !== undefined || options.as !== undefined) {
+            throw appError('INVALID_INPUT', '续接留在原来的制作里，不要同时用 --reference 或 --as 开新项目。');
+        }
+        return options;
+    }
+    if (options.reference === undefined && options.as === undefined) return options;
+    const reference = typeof options.reference === 'string' ? options.reference.trim() : '';
+    const slug = typeof options.as === 'string' ? options.as.trim() : '';
+    if (!reference || !slug) throw appError('INVALID_INPUT', '开启新项目需要同时提供 --reference 和 --as。');
+    if (options.production !== undefined && options.production !== slug) {
+        throw appError('INVALID_INPUT', '--as 与 --production 不是同一个制作。');
+    }
+    const name = assertSlug(slug);
+    const catalogPath = config.catalogPath || path.join(config.workspace, 'catalog.json');
+    let catalog;
+    try { catalog = await readCatalog(catalogPath); }
+    catch (error) {
+        if (error.code === 'CATALOG_INVALID' && String(error.message).includes('不存在')) {
+            throw appError('NOT_FOUND', `没有这条参考: ${reference}`);
+        }
+        throw error;
+    }
+    const ref = findReference(catalog, reference);
+    if (!ref) throw appError('NOT_FOUND', `没有这条参考: ${reference}`);
+    const existing = findProduction(catalog, name);
+    if (existing) {
+        if (!(existing.referenceIds || []).includes(ref.id)) {
+            throw appError('ALREADY_EXISTS', `制作 ${name} 已经绑定了别的参考，不能当作这次的新项目。`);
+        }
+        return { ...options, production: name, referenceId: ref.id, openedProduction: false, pendingProduction: false };
+    }
+    if (!write) {
+        return { ...options, production: name, referenceId: ref.id, openedProduction: false, pendingProduction: true };
+    }
+    await startProduction({ ...config, catalogPath }, { refId: ref.id, slug: name });
+    if (runId) {
+        const note = `\n${localStamp()} 开项：运行 ${runId} 已绑定参考 ${ref.id}。这一轮的状态写在 agent-activity.json，中止后用 agent:run --continue ${runId} 接着做。\n`;
+        await fs.appendFile(path.join(config.workspace, 'productions', name, 'PROGRESS.md'), note);
+    }
+    return { ...options, production: name, referenceId: ref.id, openedProduction: true, pendingProduction: false };
+}
+
+const AUTO_CONTEXT = new Set(['AGENTS.md', 'README.md']);
+
+function isAutoContext(relative, production) {
+    const normalized = relative.split(path.sep).join('/');
+    if (AUTO_CONTEXT.has(normalized)) return true;
+    if (production && [`productions/${production}/BRIEF.md`, `productions/${production}/TREATMENT.md`, `productions/${production}/PROGRESS.md`].includes(normalized)) return true;
+    return /^references\/[^/]+\/(?:SOURCE\.json|ANALYSIS\.md|TIMELINE\.md)$/.test(normalized);
+}
+
+async function prepareRunOptions(config, options) {
+    if (!options.continueRun) return options;
+    if (options.reference !== undefined || options.as !== undefined) {
+        throw appError('INVALID_INPUT', '续接留在原来的制作里，不要同时用 --reference 或 --as 开新项目。');
+    }
+    if (options.instruction !== undefined && options.instructionFile !== undefined) {
+        throw appError('INVALID_INPUT', '--continue 的优化要求用 --instruction 或 --instruction-file，二选一。');
+    }
+    const previous = await readRun(config, options.continueRun);
+    if (ACTIVE.has(previous.status)) throw appError('AGENT_BUSY', `运行 ${previous.id} 还没结束，不能续接。`);
+    if (options.production !== undefined && options.production !== previous.production) {
+        throw appError('INVALID_INPUT', '续接必须留在同一次制作里。');
+    }
+    const taskFile = await safePath(agentStorageRoot(config), `${previous.id}/task.json`);
+    let task;
+    try { task = JSON.parse(await fs.readFile(taskFile, 'utf8')); }
+    catch { throw appError('AGENT_RECORD_INVALID', `无法读取上次任务: ${previous.id}`); }
+    if (typeof task.instruction !== 'string' || !task.instruction.trim()) {
+        throw appError('AGENT_RECORD_INVALID', '上次任务没有可继续的指令。');
+    }
+    const root = await fs.realpath(config.workspace);
+    const recovered = [];
+    for (const input of Array.isArray(task.inputs) ? task.inputs : []) {
+        if (!input || typeof input.path !== 'string' || isAutoContext(input.path, previous.production)) continue;
+        const file = await safePath(root, input.path, { optional: true });
+        if (!file) continue;
+        const content = await fs.readFile(file, 'utf8').catch(() => null);
+        if (content == null || content.trim() === task.instruction.trim()) continue;
+        recovered.push(input.path);
+    }
+    const prior = typeof previous.execution?.text === 'string' ? previous.execution.text.replace(/\s+/g, ' ').trim().slice(0, 2000) : '';
+    const original = task.instruction.trim();
+    const followUp = typeof options.instruction === 'string' ? options.instruction.trim() : '';
+    const resumed = {
+        id: previous.id, status: previous.status, priorText: prior, original,
+    };
+    return {
+        ...options,
+        instruction: options.instructionFile !== undefined ? undefined : continuationInstruction({ ...resumed, followUp }),
+        followUpText: followUp,
+        previousInstruction: original,
+        previousStatus: previous.status,
+        previousExcerpt: prior,
+        production: previous.production ?? undefined,
+        target: options.target || previous.target,
+        timeoutMs: options.timeoutMs ?? task.execution?.request?.timeoutMs,
+        inputs: [...recovered, ...(options.inputs || [])],
+        continuedFrom: previous.id,
+    };
+}
+
+function unfinishedHint(record) {
+    if (!record.production || record.status === 'completed') return '';
+    return ` 项目文件已保留。用 agent:run --continue ${record.id} 接着做；要按新要求改结果，再加上 --instruction。`;
+}
+
 function hubFetch(config, deps) {
     return httpFetch(mediaProxy(config, 'video'), deps.fetchImpl);
 }
@@ -135,6 +287,7 @@ function operationalEnv(env) {
 }
 
 async function buildPlan(config, options, runId = 'preview') {
+    options = await prepareRunOptions(config, options);
     const settings = await loadAgentConfig(config, { configPath: options.agentConfig });
     const { target, enabled } = selectAgentTarget(settings, options.target);
     const root = await fs.realpath(config.workspace);
@@ -150,24 +303,45 @@ async function buildPlan(config, options, runId = 'preview') {
         return input;
     };
     let instruction = options.instruction;
+    let followUpText = options.followUpText || '';
     if (options.instructionFile !== undefined) instruction = (await add(options.instructionFile)).content;
+    if (options.previousInstruction && options.instructionFile !== undefined) {
+        followUpText = typeof instruction === 'string' ? instruction.trim() : '';
+        instruction = continuationInstruction({
+            id: options.continuedFrom, status: options.previousStatus, priorText: options.previousExcerpt,
+            original: options.previousInstruction, followUp: followUpText,
+        });
+    }
     if (typeof instruction !== 'string' || !instruction.trim() || instruction.includes('\0') || Buffer.byteLength(instruction) > MAX_INPUT_BYTES) {
         throw appError('INVALID_INPUT', '任务指令必须是非空文本，且不超过 256 KiB。');
     }
     await add('AGENTS.md', true);
     await add('README.md', true);
     let production = null;
+    let productionDir = null;
+    let referenceId = options.referenceId || null;
     if (options.production !== undefined) {
         production = assertSlug(options.production);
         const catalog = await readCatalog(config.catalogPath || path.join(root, 'catalog.json'));
         const item = findProduction(catalog, production);
-        if (!item) throw appError('NOT_FOUND', `没有这条制作: ${production}`);
-        if (typeof item.dir !== 'string') throw appError('CATALOG_INVALID', '制作目录缺失。');
-        await add(`${item.dir}/BRIEF.md`);
-        for (const name of ['TREATMENT.md', 'PROGRESS.md']) await add(`${item.dir}/${name}`, true);
-        for (const id of item.referenceIds || []) {
-            const ref = findReference(catalog, id);
-            if (!ref || typeof ref.dir !== 'string') throw appError('CATALOG_INVALID', `制作绑定的参考不存在: ${id}`);
+        if (!item && !options.pendingProduction) throw appError('NOT_FOUND', `没有这条制作: ${production}`);
+        if (item) {
+            if (typeof item.dir !== 'string') throw appError('CATALOG_INVALID', '制作目录缺失。');
+            productionDir = item.dir;
+            if (!referenceId && Array.isArray(item.referenceIds) && item.referenceIds.length) referenceId = item.referenceIds[0];
+            await add(`${item.dir}/BRIEF.md`);
+            for (const name of ['TREATMENT.md', 'PROGRESS.md']) await add(`${item.dir}/${name}`, true);
+            for (const id of item.referenceIds || []) {
+                const ref = findReference(catalog, id);
+                if (!ref || typeof ref.dir !== 'string') throw appError('CATALOG_INVALID', `制作绑定的参考不存在: ${id}`);
+                await add(`${ref.dir}/SOURCE.json`);
+                for (const name of ['ANALYSIS.md', 'TIMELINE.md']) await add(`${ref.dir}/${name}`, true);
+            }
+        } else {
+            productionDir = `productions/${production}`;
+            const ref = findReference(catalog, referenceId);
+            if (!ref || typeof ref.dir !== 'string') throw appError('CATALOG_INVALID', `制作绑定的参考不存在: ${referenceId || ''}`);
+            referenceId = ref.id;
             await add(`${ref.dir}/SOURCE.json`);
             for (const name of ['ANALYSIS.md', 'TIMELINE.md']) await add(`${ref.dir}/${name}`, true);
         }
@@ -184,6 +358,7 @@ async function buildPlan(config, options, runId = 'preview') {
         '如缺少工具、素材或证据，请明确报告。完成时说明修改、验证结果和未完成事项。',
         hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会读取项目 Hub 设置，并使用出片任务的代理。' : '',
         production ? `本次制作: ${production}` : '',
+        production ? checkpointPrompt(production, timeout(options.timeoutMs, settings.timeoutMs), referenceId, Boolean(options.pendingProduction)) : '',
         ...[...files.values()].map(file => `\n--- 项目输入 ${file.path} (sha256:${file.sha256}) ---\n${file.content}\n--- 输入结束 ---`),
         mediaAuthorization(config, Boolean(hubPlan)),
         `\n用户任务:\n${instruction.trim()}`,
@@ -201,7 +376,10 @@ async function buildPlan(config, options, runId = 'preview') {
     // Validate storage without creating it, including for a dry plan.
     const storageRoot = agentStorageRoot({ ...config, workspace: root });
     return {
-        schemaVersion: 1, workspace: root, production, target, enabled,
+        schemaVersion: 1, workspace: root, production, productionDir, referenceId, pendingProduction: Boolean(options.pendingProduction),
+        openedProduction: Boolean(options.openedProduction),
+        activityInstruction: (followUpText || options.previousInstruction || instruction).trim(),
+        continuedFrom: options.continuedFrom || null, target, enabled,
         configPath: settings.configPath, storageRoot, instruction,
         inputs: [...files.values()].map(({ content, ...input }) => input), execution,
         ...(hubPlan ? { hubPlan } : {}),
@@ -273,7 +451,8 @@ async function acquireLock(storageRoot, record) {
 
 async function runAgent(config, options, deps) {
     const id = `r_${Date.now()}_${randomUUID().slice(0, 8)}`;
-    const task = await buildPlan(config, options, id);
+    const opened = await ensureRunProduction(config, options, { write: true, runId: id });
+    const task = await buildPlan(config, opened, id);
     if (!task.enabled) throw appError('CONFIG_INVALID', `目标 ${task.target.name} 已禁用；请先在本机 Agent 配置中启用。`);
     const env = await agentCredentialEnvironment(config, task.target);
     const redactor = runtime.createRedactor(Object.values(operationalEnv(env))
@@ -289,10 +468,15 @@ async function runAgent(config, options, deps) {
     const runDir = path.join(task.storageRoot, id);
     const record = {
         schemaVersion: 1, id, workspace: task.workspace, production: task.production,
-        target: task.target.name, status: 'preparing', runDir,
+        continuedFrom: task.continuedFrom, target: task.target.name, status: 'preparing', runDir,
         createdAt: new Date().toISOString(), finishedAt: null,
         owner: { pid: process.pid, hostname: os.hostname() }, execution: null,
     };
+    const activity = createActivityWriter({
+        root: task.workspace, dir: task.productionDir, runId: id, target: task.target.name,
+        startedAt: record.createdAt, continuedFrom: task.continuedFrom,
+        instruction: redactor.text(task.activityInstruction || ''), referenceId: task.referenceId,
+    });
     const release = await acquireLock(task.storageRoot, record);
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -305,6 +489,7 @@ async function runAgent(config, options, deps) {
         created = true;
         await save();
         await writeJson(path.join(runDir, 'task.json'), redactor.value(task));
+        await activity.update('preparing', true);
         deps.signal?.addEventListener('abort', abort, { once: true });
         if (deps.signal?.aborted) abort();
         process.once('SIGINT', abort);
@@ -338,11 +523,19 @@ async function runAgent(config, options, deps) {
         if (codexBin) childEnv.VIDEO_REMAKE_CODEX_BIN = codexBin;
         record.status = 'running';
         await save();
+        await activity.update('running', true);
         record.execution = await runtime.run(execution, {
             signal: controller.signal, runDir: path.join(runDir, 'runtime'),
             env: childEnv,
             resolveCredential: ref => hub && ref === AGENT_HUB_TOKEN_REF ? hub.token : env[ref],
-            onEvent: deps.onEvent ? event => deps.onEvent(redactor.value(event)) : undefined,
+            onEvent: event => {
+                const safe = redactor.value(event);
+                if (safe.type === 'message' && typeof safe.data?.text === 'string') {
+                    activity.note(safe.data.text);
+                    void activity.update(record.status);
+                }
+                return deps.onEvent?.(safe);
+            },
         });
         record.status = record.execution.status;
         record.finishedAt = record.execution.finishedAt;
@@ -359,11 +552,12 @@ async function runAgent(config, options, deps) {
         deps.signal?.removeEventListener('abort', abort);
         process.removeListener('SIGINT', abort);
         process.removeListener('SIGTERM', abort);
+        await activity.finish(record.status, record.execution?.text || record.error);
         await release();
     }
-    const data = { command: 'agent:run', run: redactor.value(record) };
+    const data = { command: 'agent:run', run: redactor.value(record), ...(task.openedProduction ? { openedProduction: task.production } : {}) };
     if (record.status !== 'completed') {
-        throw appError(`AGENT_${record.status.toUpperCase()}`, record.execution?.error || record.error || `Agent ${record.status}`, { data });
+        throw appError(`AGENT_${record.status.toUpperCase()}`, `${record.execution?.error || record.error || `Agent ${record.status}`}${unfinishedHint(record)}`, { data });
     }
     return data;
 }
@@ -397,7 +591,10 @@ export async function executeAgent(config, action, options = {}, deps = {}) {
         const settings = await loadAgentConfig(config, { configPath: options.agentConfig });
         return { command: 'agent:config', ...settings, storageRoot: agentStorageRoot(config) };
     }
-    if (action === 'plan') return { command: 'agent:plan', plan: await buildPlan(config, options) };
+    if (action === 'plan') {
+        const opened = await ensureRunProduction(config, options, { write: false });
+        return { command: 'agent:plan', plan: await buildPlan(config, opened) };
+    }
     if (action === 'run') return runAgent(config, options, deps);
     if (action === 'doctor') {
         const settings = await loadAgentConfig(config, { configPath: options.agentConfig });

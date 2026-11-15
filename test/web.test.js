@@ -83,6 +83,8 @@ test('library exposes only published outputs, reads metadata, and keeps unfinish
     assert.equal(draft.height, 1080);
     assert.equal(draft.referenceUrl, 'https://www.youtube.com/shorts/source');
     assert.equal(draft.reference.id, 'youtube-source');
+    assert.equal(projects.find((project) => project.slug === 'series').originals[0].id, 'youtube-source');
+    assert.equal(projects.find((project) => project.slug === 'empty').originals.length, 0);
     assert.equal(draft.reference.title, 'Original source');
     assert.equal(draft.reference.duration, 13);
     assert.equal(draft.reference.audio, 'unknown');
@@ -103,6 +105,26 @@ test('library exposes only published outputs, reads metadata, and keeps unfinish
     assert.equal(media.size, 8);
     assert.ok(!JSON.stringify(projects).includes('/private/'));
     assert.ok(!JSON.stringify(projects).includes(f.root));
+});
+
+test('workbench exposes agent activity and ignores a broken record', async (t) => {
+    const f = await fixture(t);
+    await f.write('productions/series/agent-activity.json', {
+        schemaVersion: 1, runId: 'r_test_activity', status: 'timed_out', target: 'claude-local',
+        startedAt: '2026-11-15T06:00:00.000Z', updatedAt: '2026-11-15T06:10:00.000Z',
+        summary: '停在时间轴', continuedFrom: null, packages: ['felt-bikini-v1', '../nope'],
+    });
+    const project = (await readWebLibrary(f.root)).projects.find(item => item.slug === 'series');
+    assert.equal(project.activity.status, 'timed_out');
+    assert.equal(project.activity.summary, '停在时间轴');
+    assert.deepEqual(project.activity.packages, ['felt-bikini-v1']);
+    await f.write('productions/series/agent-activity.json', '{');
+    assert.equal((await readWebLibrary(f.root)).projects.find(item => item.slug === 'series').activity, null);
+    const base = await serve(t, f.root);
+    const response = await fetch(`${base}/api/projects/series/activity`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).activity, null);
+    assert.equal((await fetch(`${base}/api/projects/missing/activity`)).status, 404);
 });
 
 test('library rejects output traversal and symlink escapes', async (t) => {

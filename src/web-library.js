@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { resolveConfig } from './config.js';
+import { readProductionActivity } from './agent-activity.js';
 
 const videoTypes = new Map([['.mp4', 'video/mp4'], ['.webm', 'video/webm'], ['.mov', 'video/quicktime'], ['.m4v', 'video/mp4']]);
 const imageTypes = new Map([['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp']]);
@@ -350,6 +351,12 @@ export async function readWebLibrary(workspace, { env = process.env } = {}) {
             try { dates.push((await fs.stat(await checkedPath(root, `productions/${entry.slug}`))).mtimeMs); } catch { /* New project without a directory. */ }
         }
         project.updatedAt = dates.length ? new Date(Math.max(...dates)).toISOString() : null;
+        project.activity = await readProductionActivity(root, entry.dir || `productions/${entry.slug}`);
+        project.originals = [];
+        for (const id of referenceIds) {
+            const source = await original(id, null, entry.slug);
+            if (source) project.originals.push(source);
+        }
         projects.push(project);
     }
     projects.sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));

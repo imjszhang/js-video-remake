@@ -1,6 +1,6 @@
 /** 项目视图：项目头、两个工作区页签、归档菜单，以及把模板编辑器和放映区接到当前项目上。 */
 import { api } from './api.js';
-import { $, $$, node, statusLabel, notify } from './ui.js';
+import { $, $$, node, statusLabel, notify, mediaUrl } from './ui.js';
 import { state, activeProject, changed, updateHash } from './state.js';
 import { projectTitle } from './library-model.js';
 import { mountTemplateEditor, preferTemplateVersion } from './template-editor.js';
@@ -39,6 +39,57 @@ function playTemplateVersion(version) {
     $('#playback-workspace').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
+const ACTIVITY_LABELS = {
+    preparing: '正在准备', running: '正在制作', completed: '这一轮已结束',
+    failed: '已停下', cancelled: '已取消', timed_out: '已到时限', interrupted: '已中断',
+};
+
+function renderActivity(project) {
+    const banner = $('#agent-activity');
+    const activity = project?.activity;
+    if (!banner) return;
+    if (!activity) { banner.hidden = true; banner.replaceChildren(); return; }
+    const packages = activity.packages?.length ? `工程 ${activity.packages.join('、')}` : '还没有代码视频包';
+    const lines = [`${ACTIVITY_LABELS[activity.status] || activity.status} · ${activity.target} · ${packages}`];
+    if (activity.referenceId) lines.push(`对标 ${activity.referenceId}`);
+    if (activity.instruction) lines.push(activity.instruction);
+    if (activity.summary) lines.push(activity.summary);
+    if (activity.status === 'completed') {
+        lines.push(`结果留在这个项目里。按新要求优化：remake agent:run --continue ${activity.runId} --instruction '…'`);
+    } else if (!['preparing', 'running'].includes(activity.status)) {
+        lines.push(`文件留在这个项目里。续接：remake agent:run --continue ${activity.runId}`);
+    }
+    banner.hidden = false;
+    banner.replaceChildren(...lines.map(line => node('span', '', line)));
+}
+
+let watchToken = 0;
+function watchActivity(project) {
+    const token = ++watchToken;
+    if (!project?.activity || !['preparing', 'running'].includes(project.activity.status)) return;
+    const tick = async () => {
+        if (token !== watchToken || state.selected !== project.slug) return;
+        try {
+            const data = await api.activity(project.slug);
+            if (token !== watchToken) return;
+            const current = activeProject();
+            if (!current || current.slug !== project.slug) return;
+            const previous = current.activity;
+            current.activity = data.activity;
+            renderActivity(current);
+            const running = data.activity && ['preparing', 'running'].includes(data.activity.status);
+            const packagesChanged = JSON.stringify(data.activity?.packages || []) !== JSON.stringify(previous?.packages || []);
+            if (!running || packagesChanged) {
+                watchToken += 1;
+                await actions.reload();
+                return;
+            }
+        } catch { /* 保留上一则进度。 */ }
+        if (token === watchToken) setTimeout(tick, 5000);
+    };
+    setTimeout(tick, 5000);
+}
+
 function renderHeader(project) {
     const hasTemplate = Boolean(project.templatePackages?.length);
     $('#project-title').textContent = projectTitle(project);
@@ -49,14 +100,30 @@ function renderHeader(project) {
     $('#template-tab-count').textContent = groupTemplatePackages(project.templatePackages).length;
     $('#playback-tab-count').textContent = project.videos.length;
     $('#screening').hidden = !project.videos.length;
+    const original = project.originals?.[0];
+    const preview = $('#remake-original');
     $('#empty-project').hidden = Boolean(project.videos.length);
-    $('#empty-project h3').textContent = hasTemplate ? '还没有可播放的视频' : '这个项目还在制作中';
+    $('#empty-project h3').textContent = hasTemplate ? '还没有可播放的视频' : original ? '复刻还没有成片' : '这个项目还在制作中';
     $('#empty-project p').textContent = hasTemplate
         ? '模板和静态截图已在工作台就绪。进入「预览与导出」，合成后的视频会出现在这里。'
-        : project.codePackages?.length
-            ? '登记成片后可以在这里播放。也可以把上面的复刻工程收成模板，再填写口播和音乐。'
-            : '登记成片或审阅草稿后，会自动出现在这里。';
+        : original
+            ? `对标原片「${original.title}」可以先看。复刻工程还在制作，成片登记后会出现在这里，并和原片并排对比。`
+            : project.codePackages?.length
+                ? '登记成片后可以在这里播放。也可以把上面的复刻工程收成模板，再填写口播和音乐。'
+                : '登记成片或审阅草稿后，会自动出现在这里。';
+    if (preview) {
+        if (!project.videos.length && original && mediaUrl(original.url)) {
+            const url = mediaUrl(original.url);
+            if (preview.dataset.src !== url) { preview.dataset.src = url; preview.src = url; }
+            preview.hidden = false;
+        } else {
+            preview.hidden = true;
+            preview.removeAttribute('src');
+            delete preview.dataset.src;
+        }
+    }
     renderAdopt(project);
+    renderActivity(project);
 }
 
 function renderAdopt(project) {
@@ -100,12 +167,14 @@ export function openProject(slug, { videoId, version } = {}) {
     renderVersions();
     if (project.videos.length) selectVideo(videoForVersion(project, state.version, project.videos.find(video => video.id === videoId)).id);
     setWorkspace(state.workspace);
+    watchActivity(project);
     changed();
     return true;
 }
 
 /** 离开项目视图：停掉播放、卸载编辑器。显示什么由调用方决定。 */
 export function closeProject() {
+    watchToken += 1;
     Object.assign(state, { selected: null, video: null, version: null, workspace: null });
     releasePlayers();
     mountTemplateEditor(null);

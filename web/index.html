@@ -68,6 +68,7 @@
           <div class="project-identity"><p id="project-kicker" class="eyebrow"></p><h2 id="project-title"></h2></div>
           <div class="project-actions"><span id="project-status" class="status-badge"></span><details class="project-menu"><summary aria-label="更多项目操作" title="更多项目操作">⋯</summary><div class="project-menu-panel"><button type="button" id="archive-project">归档项目</button></div></details></div>
         </div>
+        <div id="agent-activity" class="agent-activity" hidden></div>
 
         <section id="adopt-panel" class="adopt-panel" hidden>
           <div>
@@ -114,7 +115,7 @@
           </section>
           <aside class="playlist-panel" aria-label="播放列表"><div class="playlist-heading"><h3>播放列表</h3><span id="playlist-count"></span></div><div id="playlist" class="playlist"></div><label class="autoplay"><input id="auto-next" type="checkbox"> 连续播放下一条</label></aside>
         </div>
-        <div id="empty-project" class="empty-project" hidden><span class="empty-icon">▷</span><h3>这个项目还在制作中</h3><p>登记成片或审阅草稿后，会自动出现在这里。</p></div>
+        <div id="empty-project" class="empty-project" hidden><span class="empty-icon">▷</span><h3>这个项目还在制作中</h3><p>登记成片或审阅草稿后，会自动出现在这里。</p><video id="remake-original" controls playsinline preload="metadata" hidden></video></div>
         </section>
       </section>
       <footer class="workspace-footer"><span>VIDEO REMAKE</span><span>项目 · 草稿 · 成片</span></footer>
