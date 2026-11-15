@@ -43,51 +43,68 @@ const ACTIVITY_LABELS = {
     preparing: '正在准备', running: '正在制作', completed: '这一轮已结束',
     failed: '已停下', cancelled: '已取消', timed_out: '已到时限', interrupted: '已中断',
 };
+const ACTIVE_AGENT = new Set(['preparing', 'running']);
+let consoleTargets = [];
+let consoleCatalog = { harnesses: [], providers: [], targets: [] };
+const discoveredModels = new Map();
 
-function renderActivity(project) {
-    const banner = $('#agent-activity');
+function renderConsole(project, view = {}) {
+    const panel = $('#agent-console');
+    if (!panel) return;
+    panel.hidden = false;
     const activity = project?.activity;
-    if (!banner) return;
-    if (!activity) { banner.hidden = true; banner.replaceChildren(); return; }
-    const packages = activity.packages?.length ? `工程 ${activity.packages.join('、')}` : '还没有代码视频包';
-    const lines = [`${ACTIVITY_LABELS[activity.status] || activity.status} · ${activity.target} · ${packages}`];
-    if (activity.referenceId) lines.push(`对标 ${activity.referenceId}`);
-    if (activity.instruction) lines.push(activity.instruction);
-    if (activity.summary) lines.push(activity.summary);
-    if (activity.status === 'completed') {
-        lines.push(`结果留在这个项目里。按新要求优化：remake agent:run --continue ${activity.runId} --instruction '…'`);
-    } else if (!['preparing', 'running'].includes(activity.status)) {
-        lines.push(`文件留在这个项目里。续接：remake agent:run --continue ${activity.runId}`);
+    const running = Boolean(activity && ACTIVE_AGENT.has(activity.status));
+    const dot = $('#agent-console-dot');
+    dot.hidden = !running;
+    const packages = activity?.packages?.length ? activity.packages.join('、') : '';
+    if (Array.isArray(view.targets)) consoleTargets = view.targets.filter(item => item && typeof item.name === 'string');
+    const currentTarget = consoleTargets.find(item => item.name === activity?.target);
+    const meta = activity
+        ? [ACTIVITY_LABELS[activity.status] || activity.status, currentTarget?.label || activity.target, activity.runId, packages].filter(Boolean).join(' · ')
+        : '还没有运行';
+    $('#agent-console-meta').textContent = meta;
+    const log = $('#agent-console-log');
+    const lines = Array.isArray(view.lines) ? view.lines : [];
+    const header = activity?.summary ? [`# ${activity.summary}`] : [];
+    const text = [...header, ...lines].join('\n') || (running ? '等待输出…' : '填写提示词后，可以在这个项目里开始或继续调整。');
+    const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 36;
+    if (log.textContent !== text) {
+        log.textContent = text;
+        if (pinned) log.scrollTop = log.scrollHeight;
     }
-    banner.hidden = false;
-    banner.replaceChildren(...lines.map(line => node('span', '', line)));
+    renderExecution(view);
+    $('#agent-prompt').disabled = running;
+    $('#agent-continue').disabled = running || !activity?.runId;
+    $('#agent-cancel').disabled = !running;
 }
 
 let watchToken = 0;
-function watchActivity(project) {
+let watchTimer = 0;
+function watchConsole(slug) {
     const token = ++watchToken;
-    if (!project?.activity || !['preparing', 'running'].includes(project.activity.status)) return;
+    clearTimeout(watchTimer);
     const tick = async () => {
-        if (token !== watchToken || state.selected !== project.slug) return;
+        if (token !== watchToken || state.selected !== slug) return;
         try {
-            const data = await api.activity(project.slug);
+            const data = await api.agentConsole(slug);
             if (token !== watchToken) return;
             const current = activeProject();
-            if (!current || current.slug !== project.slug) return;
+            if (!current || current.slug !== slug) return;
             const previous = current.activity;
             current.activity = data.activity;
-            renderActivity(current);
-            const running = data.activity && ['preparing', 'running'].includes(data.activity.status);
+            renderConsole(current, data);
+            const running = data.activity && ACTIVE_AGENT.has(data.activity.status);
             const packagesChanged = JSON.stringify(data.activity?.packages || []) !== JSON.stringify(previous?.packages || []);
-            if (!running || packagesChanged) {
+            const finished = previous && ACTIVE_AGENT.has(previous.status) && data.activity && !running;
+            if (packagesChanged || finished) {
                 watchToken += 1;
                 await actions.reload();
                 return;
             }
-        } catch { /* 保留上一则进度。 */ }
-        if (token === watchToken) setTimeout(tick, 5000);
+        } catch { /* 保留上一屏输出。 */ }
+        if (token === watchToken) watchTimer = setTimeout(tick, 2000);
     };
-    setTimeout(tick, 5000);
+    watchTimer = setTimeout(tick, 300);
 }
 
 function renderHeader(project) {
@@ -123,7 +140,7 @@ function renderHeader(project) {
         }
     }
     renderAdopt(project);
-    renderActivity(project);
+    renderConsole(project);
 }
 
 function renderAdopt(project) {
@@ -167,7 +184,7 @@ export function openProject(slug, { videoId, version } = {}) {
     renderVersions();
     if (project.videos.length) selectVideo(videoForVersion(project, state.version, project.videos.find(video => video.id === videoId)).id);
     setWorkspace(state.workspace);
-    watchActivity(project);
+    watchConsole(slug);
     changed();
     return true;
 }
@@ -175,6 +192,9 @@ export function openProject(slug, { videoId, version } = {}) {
 /** 离开项目视图：停掉播放、卸载编辑器。显示什么由调用方决定。 */
 export function closeProject() {
     watchToken += 1;
+    clearTimeout(watchTimer);
+    const panel = $('#agent-console');
+    if (panel) panel.hidden = true;
     Object.assign(state, { selected: null, video: null, version: null, workspace: null });
     releasePlayers();
     mountTemplateEditor(null);
@@ -216,6 +236,159 @@ async function toggleArchive() {
     finally { control.disabled = false; closeMenu(); }
 }
 
+function agentInstruction() {
+    return $('#agent-instruction').value;
+}
+
+function fillSelect(select, options, previous) {
+    select.replaceChildren();
+    for (const item of options) {
+        const option = node('option', '', item.label);
+        option.value = item.value;
+        select.append(option);
+    }
+    if ([...select.options].some(option => option.value === previous)) select.value = previous;
+    else if (select.options.length) select.selectedIndex = 0;
+}
+
+function rememberModels(providerId, models) {
+    const ids = [];
+    const labels = {};
+    for (const item of models || []) {
+        if (!item?.id || ids.includes(item.id)) continue;
+        ids.push(item.id);
+        labels[item.id] = item.label || item.id;
+    }
+    if (ids.length) discoveredModels.set(providerId, { ids, labels });
+}
+
+function applyDiscovered(catalog) {
+    for (const provider of catalog?.providers || []) {
+        const found = discoveredModels.get(provider.id);
+        if (!found) continue;
+        provider.models = [...new Set([...found.ids, ...(provider.models || [])])];
+        provider.modelLabels = { ...(provider.modelLabels || {}), ...found.labels };
+    }
+}
+
+function renderExecution(view = {}) {
+    if (view.execution) {
+        consoleCatalog = view.execution;
+        applyDiscovered(consoleCatalog);
+    }
+    if (view.execution?.targets) consoleTargets = view.execution.targets;
+    else if (Array.isArray(view.targets)) consoleTargets = view.targets.filter(item => item && typeof item.name === 'string');
+    const harness = $('#agent-harness');
+    const provider = $('#agent-provider');
+    const model = $('#agent-model');
+    const custom = $('#agent-model-custom');
+    if (!harness || !provider || !model || !custom) return;
+    const harnesses = consoleCatalog.harnesses?.length
+        ? consoleCatalog.harnesses
+        : (consoleCatalog.targets || consoleTargets).map(item => ({ name: item.name, label: item.harness || item.label }));
+    const harnessSignature = harnesses.map(item => `${item.name}\t${item.label}`).join('\n');
+    if (harness.dataset.signature !== harnessSignature) {
+        const previous = harness.value;
+        const defaultLabel = (consoleCatalog.targets || []).find(item => item.name === consoleCatalog.defaultTarget)?.harness;
+        const preferred = harnesses.find(item => item.names?.includes(consoleCatalog.defaultTarget)) || harnesses.find(item => item.name === consoleCatalog.defaultTarget) || harnesses.find(item => item.label === defaultLabel);
+        fillSelect(harness, harnesses.map(item => ({ value: item.name, label: item.label })), previous || preferred?.name || '');
+        harness.dataset.signature = harnessSignature;
+    }
+    const providers = (consoleCatalog.providers || []).filter(item => !item.harnesses?.length || item.harnesses.includes(harness.value));
+    const providerSignature = `${harness.value}\n${providers.map(item => `${item.id}\t${item.label}`).join('\n')}`;
+    if (provider.dataset.signature !== providerSignature) {
+        const previous = provider.value;
+        fillSelect(provider, providers.map(item => ({ value: item.id, label: item.label })), previous);
+        provider.dataset.signature = providerSignature;
+    }
+    const selected = providers.find(item => item.id === provider.value) || providers[0];
+    const models = [...new Set((selected?.models || []).filter(Boolean))];
+    const modelSignature = `${provider.value}\n${models.join('\n')}`;
+    if (model.dataset.signature !== modelSignature) {
+        const previous = model.value;
+        const configured = (consoleCatalog.targets || []).find(item => item.name === consoleCatalog.defaultTarget)?.model;
+        const preferred = models.includes(previous) ? previous : (models.includes(configured) ? configured : models[0] || '__custom__');
+        fillSelect(model, [
+            ...models.map(value => ({ value, label: selected?.modelLabels?.[value] && selected.modelLabels[value] !== value ? `${selected.modelLabels[value]}（${value}）` : (value === 'configured' ? '客户端当前模型' : value) })),
+            { value: '__custom__', label: '自定义模型 ID…' },
+        ], preferred);
+        model.dataset.signature = modelSignature;
+    }
+    custom.hidden = model.value !== '__custom__';
+    updateTargetDetail();
+    refreshModels();
+}
+
+let modelRequest = '';
+function refreshModels() {
+    const providerId = $('#agent-provider')?.value;
+    const harnessId = $('#agent-harness')?.value;
+    const slug = state.selected;
+    if (!providerId || !slug) return;
+    const key = `${slug}\n${harnessId || ''}\n${providerId}`;
+    if (modelRequest === key) return;
+    modelRequest = key;
+    const note = $('#agent-console-note');
+    if (note && !note.textContent) note.textContent = '正在读取可选模型…';
+    api.agentModels(slug, providerId, harnessId).then(data => {
+        if (`${state.selected}\n${$('#agent-harness')?.value || ''}\n${$('#agent-provider')?.value || ''}` !== key) return;
+        const ids = Array.isArray(data?.models) ? data.models.map(item => item?.id).filter(Boolean) : [];
+        if (ids.length && !data?.error) rememberModels(providerId, data.models);
+        else if (ids.length && !discoveredModels.has(providerId)) rememberModels(providerId, data.models);
+        applyDiscovered(consoleCatalog);
+        if (ids.length) {
+            $('#agent-model').dataset.signature = '';
+            renderExecution();
+        }
+        if (note && (note.textContent === '正在读取可选模型…' || data?.error)) note.textContent = data?.error || '';
+    }).catch(error => {
+        if (`${state.selected}\n${$('#agent-harness')?.value || ''}\n${$('#agent-provider')?.value || ''}` !== key) return;
+        if (note) note.textContent = error.message;
+    });
+}
+
+function chosenModel() {
+    const model = $('#agent-model')?.value || '';
+    if (model === '__custom__') return $('#agent-model-custom').value.trim();
+    return model;
+}
+
+function updateTargetDetail() {
+    const harness = (consoleCatalog.harnesses || []).find(item => item.name === $('#agent-harness')?.value);
+    const provider = (consoleCatalog.providers || []).find(item => item.id === $('#agent-provider')?.value);
+    const model = chosenModel();
+    const modelText = model === 'configured' ? '客户端当前模型' : model || '尚未选择';
+    $('#agent-target-detail').textContent = harness || provider
+        ? `执行器 ${harness?.label || '默认'}，Provider ${provider?.label || '当前连接'}，模型 ${modelText}。`
+        : '还没有启用的执行目标。';
+}
+
+function agentSelection() {
+    return {
+        target: $('#agent-harness')?.value || undefined,
+        providerTarget: $('#agent-provider')?.value || undefined,
+        model: chosenModel() || undefined,
+    };
+}
+
+async function runAgentAction(mode) {
+    const project = activeProject();
+    if (!project) return;
+    const note = $('#agent-console-note');
+    const buttons = ['#agent-prompt', '#agent-continue', '#agent-cancel'].map(selector => $(selector));
+    for (const button of buttons) button.disabled = true;
+    note.textContent = mode === 'cancel' ? '正在停止…' : '正在启动…';
+    try {
+        await api.agentAction(project.slug, { mode, instruction: agentInstruction(), ...agentSelection() });
+        note.textContent = mode === 'cancel' ? '已请求停止。' : '已启动，输出会显示在上面。';
+        if (mode !== 'cancel') $('#agent-instruction').value = '';
+        watchConsole(project.slug);
+    } catch (error) {
+        note.textContent = error.message;
+        renderConsole(activeProject() || project);
+    }
+}
+
 const closeMenu = () => { for (const menu of $$('.project-menu[open]')) menu.removeAttribute('open'); };
 
 export function initProjects(injected) {
@@ -240,6 +413,13 @@ export function initProjects(injected) {
     });
     $('#adopt-title').addEventListener('input', event => { event.target.dataset.edited = '1'; });
     $('#adopt-form').addEventListener('submit', adoptTemplate);
+    $('#agent-harness').addEventListener('change', () => { $('#agent-provider').dataset.signature = ''; $('#agent-model').dataset.signature = ''; renderExecution(); });
+    $('#agent-provider').addEventListener('change', () => { $('#agent-model').dataset.signature = ''; renderExecution(); });
+    $('#agent-model').addEventListener('change', () => { $('#agent-model-custom').hidden = $('#agent-model').value !== '__custom__'; updateTargetDetail(); });
+    $('#agent-model-custom').addEventListener('input', updateTargetDetail);
+    $('#agent-console-form').addEventListener('submit', event => { event.preventDefault(); void runAgentAction('prompt'); });
+    $('#agent-continue').addEventListener('click', () => { void runAgentAction('continue'); });
+    $('#agent-cancel').addEventListener('click', () => { void runAgentAction('cancel'); });
     document.addEventListener('click', event => { if (!event.target.closest('.project-menu')) closeMenu(); });
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || !$('.project-menu[open]')) return;

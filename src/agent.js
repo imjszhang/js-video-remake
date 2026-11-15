@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import * as runtime from 'js-agent-runtime';
 import { loadAgentConfig, selectAgentTarget, agentStorageRoot } from './agent-config.js';
+import { combineAgent } from './template-agent-selection.js';
+import { readTemplateProviders } from './template-providers.js';
 import { readCatalog, findProduction, findReference } from './catalog.js';
 import { startProduction } from './start.js';
 import { assertSlug } from './schema.js';
@@ -286,10 +288,16 @@ function operationalEnv(env) {
         .filter(key => typeof env[key] === 'string').map(key => [key, env[key]]));
 }
 
+async function resolveRunTarget(config, settings, options) {
+    if (!options.providerTarget && !options.model) return selectAgentTarget(settings, options.target);
+    settings.providers = await readTemplateProviders(config);
+    return { target: combineAgent(config, settings, { target: options.target, providerTarget: options.providerTarget, model: options.model }), enabled: true };
+}
+
 async function buildPlan(config, options, runId = 'preview') {
     options = await prepareRunOptions(config, options);
     const settings = await loadAgentConfig(config, { configPath: options.agentConfig });
-    const { target, enabled } = selectAgentTarget(settings, options.target);
+    const { target, enabled } = await resolveRunTarget(config, settings, options);
     const root = await fs.realpath(config.workspace);
     const hubPlan = await planAgentHub(config, settings.mcp, target);
     const privateFiles = [settings.configPath, hubPlan?.tokenFile || config.media?.video?.settings?.hubTokenFile];

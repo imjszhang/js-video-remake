@@ -38,6 +38,11 @@ export const upload = (url, action, file) => post(url, action, {
 export const api = {
     projects: () => call('api/projects', { method: 'GET' }),
     activity: slug => call(`api/projects/${encodeURIComponent(slug)}/activity`),
+    agentConsole: slug => call(`api/projects/${encodeURIComponent(slug)}/agent`),
+    agentModels: (slug, provider, target) => call(`api/projects/${encodeURIComponent(slug)}/agent/models?${new URLSearchParams({ ...(provider ? { provider } : {}), ...(target ? { target } : {}) })}`),
+    agentAction: (slug, body) => post(`api/projects/${encodeURIComponent(slug)}/agent`, 'agent', {
+        body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' },
+    }),
     importTemplate: (file, slug) => upload(`api/templates/import${slug ? `?${new URLSearchParams({ slug })}` : ''}`, 'import', file),
     packTemplate: (slug, name) => post(`api/projects/${encodeURIComponent(slug)}/templates/${encodeURIComponent(name)}`, 'pack'),
     adoptTemplate: (slug, name, title) => post(`api/projects/${encodeURIComponent(slug)}/packages/${encodeURIComponent(name)}/template`, 'adopt', {

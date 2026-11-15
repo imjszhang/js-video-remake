@@ -208,19 +208,60 @@
 .project-menu-panel button { display: block; width: 100%; background: none; text-align: left; padding: 9px 11px; border-radius: var(--radius-s); color: var(--ink-2); font-size: 12px; }
 .project-menu-panel button:hover { background: var(--surface-3); color: var(--ink-1); }
 
-.agent-activity {
+.agent-console {
     display: grid;
-    gap: 6px;
+    gap: 10px;
     margin: 0 0 18px;
-    padding: 14px 16px;
+    padding: 12px;
     border: 1px solid var(--edge);
     border-radius: var(--radius-l);
-    background: var(--surface-2);
-    color: var(--ink-2);
-    font-size: 13px;
-    line-height: 1.6;
+    background: var(--surface-1);
 }
-.agent-activity span:first-child { color: var(--ink-1); font-weight: 600; }
+.agent-console-bar { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink-3); font-size: 12px; }
+.agent-console-bar strong { color: var(--ink-1); font-size: 13px; }
+.agent-console-bar span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-console-log {
+    height: 220px;
+    margin: 0;
+    overflow: auto;
+    padding: 12px;
+    border-radius: var(--radius-m);
+    background: #070909;
+    color: #d7e7c8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.agent-console-prompt { display: grid; gap: 6px; color: var(--ink-3); font-size: 12px; }
+.agent-console-prompt textarea {
+    width: 100%;
+    min-height: 72px;
+    resize: vertical;
+    padding: 10px 12px;
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-s);
+    background: var(--surface-0);
+    color: var(--ink-1);
+    font: inherit;
+    line-height: 1.5;
+}
+.agent-console-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.agent-console-actions label { display: flex; align-items: center; gap: 6px; color: var(--ink-3); font-size: 12px; }
+.agent-console-actions select,
+.agent-console-actions input[type="text"] {
+    max-width: 220px;
+    padding: 8px 10px;
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-s);
+    background: var(--surface-0);
+    color: var(--ink-1);
+    font: inherit;
+}
+.agent-console-help, .agent-console-note, #agent-target-detail { color: var(--ink-3); font-size: 12px; line-height: 1.6; }
+.agent-console-help { margin: 0; }
+#agent-target-detail { flex-basis: 100%; }
 
 /* ── 页签与工作区 ───────────────────────────────────── */
 .workspace-tabs {
@@ -404,6 +445,7 @@
     .project-actions { width: 100%; justify-content: space-between; }
     .workspace-tabs { gap: 18px; }
     .adopt-panel { grid-template-columns: minmax(0, 1fr); }
+    .agent-console-log { height: 180px; }
 }
 @media (prefers-reduced-motion: reduce) {
     .project-card, .start-card { transition: none; }

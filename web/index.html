@@ -68,7 +68,25 @@
           <div class="project-identity"><p id="project-kicker" class="eyebrow"></p><h2 id="project-title"></h2></div>
           <div class="project-actions"><span id="project-status" class="status-badge"></span><details class="project-menu"><summary aria-label="更多项目操作" title="更多项目操作">⋯</summary><div class="project-menu-panel"><button type="button" id="archive-project">归档项目</button></div></details></div>
         </div>
-        <div id="agent-activity" class="agent-activity" hidden></div>
+        <section id="agent-console" class="agent-console" hidden aria-label="Agent 监视">
+          <div class="agent-console-bar"><span id="agent-console-dot" class="live-dot" hidden></span><strong>Agent 监视</strong><span id="agent-console-meta"></span></div>
+          <pre id="agent-console-log" role="log" aria-live="polite"></pre>
+          <form id="agent-console-form">
+            <label class="agent-console-prompt">提示词<textarea id="agent-instruction" rows="3" maxlength="8000" placeholder="写下这一轮要做的事。接着上次改时可以留空。"></textarea></label>
+            <p class="agent-console-help">执行器决定谁来改文件。Provider 是模型服务。可选模型都在「模型」下拉框里；没有列出的，再选「自定义模型 ID」填写。<br>「新开一轮」只按输入框里的话另做一轮。「接着上次改」留在同一次运行上：框里有话就按它改已有结果，留空就从上次停下的地方继续。</p>
+            <div class="agent-console-actions">
+              <label>执行器<select id="agent-harness" aria-label="执行器"></select></label>
+              <label>Provider<select id="agent-provider" aria-label="Provider"></select></label>
+              <label>模型<select id="agent-model" aria-label="模型"></select></label>
+              <input id="agent-model-custom" type="text" maxlength="160" placeholder="自定义模型 ID" aria-label="自定义模型 ID" hidden autocomplete="off">
+              <button type="submit" id="agent-prompt" class="btn btn-primary" title="不沿用上次任务，只按输入框里的话新做一轮">新开一轮</button>
+              <button type="button" id="agent-continue" class="btn btn-ghost" title="留在同一次运行上。有提示就按它修改，留空就从停下的地方继续">接着上次改</button>
+              <button type="button" id="agent-cancel" class="btn btn-ghost">停止</button>
+              <span id="agent-target-detail"></span>
+              <span id="agent-console-note" role="status"></span>
+            </div>
+          </form>
+        </section>
 
         <section id="adopt-panel" class="adopt-panel" hidden>
           <div>

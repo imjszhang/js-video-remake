@@ -1,5 +1,8 @@
 import { readCatalog, writeCatalog } from './catalog.js';
 import { readProductionActivity } from './agent-activity.js';
+import { agentExecutionCatalog, formatAgentConsole } from './agent-console.js';
+import { combineAgent } from './template-agent-selection.js';
+import { displayModel } from './template-agent-details.js';
 import { appError } from './errors.js';
 import { listVideos, packVideo, unpackVideo } from './videos.js';
 import { adoptVideo } from './template-adopt.js';
@@ -139,7 +142,37 @@ async function sendMedia(request, response, asset, download) {
 }
 
 /** The gateway strips /remake/; every frontend URL is relative to that mount. */
-export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, templateDeps, referenceDeps } = {}) {
+const AGENT_TARGET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function cleanInstruction(value, { required }) {
+    if (value == null || value === '') {
+        if (required) throw appError('INVALID_INPUT', '请填写提示词。');
+        return undefined;
+    }
+    if (typeof value !== 'string' || value.includes('\0') || value.trim().length > 8000) {
+        throw appError('INVALID_INPUT', '提示词需要是不超过 8000 字的文本。');
+    }
+    const text = value.trim();
+    if (!text) {
+        if (required) throw appError('INVALID_INPUT', '请填写提示词。');
+        return undefined;
+    }
+    return text;
+}
+
+function optionalName(value, message) {
+    if (value == null || value === '') return undefined;
+    if (typeof value !== 'string' || !AGENT_TARGET.test(value)) throw appError('INVALID_INPUT', message);
+    return value;
+}
+
+function optionalModel(value) {
+    if (value == null || value === '') return undefined;
+    if (value === 'configured' || displayModel(value)) return value;
+    throw appError('INVALID_INPUT', '模型 ID 无效，请填写不含空格的模型名称。');
+}
+
+export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, templateDeps, referenceDeps, agentDeps } = {}) {
     const workspace = path.resolve(root);
     const reproduction = createReproController({ root: workspace, config: reproConfig, deps: reproDeps, sendAsset: sendMedia });
     let catalogQueue = Promise.resolve();
@@ -150,6 +183,75 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
     };
     const templates = createTemplateController({ root: workspace, deps: { ...templateDeps, withCatalogWrite }, sendAsset: sendMedia });
     const references = createReferenceController({ root: workspace, deps: { ...referenceDeps, withCatalogWrite } });
+    const agentAbort = new AbortController();
+    let agentLaunch = null;
+    const runAgent = async (action, options) => {
+        const execute = agentDeps?.executeAgent || (await import('./agent.js')).executeAgent;
+        return execute(resolveConfig({ workspace }), action, options, { signal: agentAbort.signal });
+    };
+    async function projectRecord(slug) {
+        let catalog;
+        try { catalog = JSON.parse(await fs.readFile(path.join(workspace, 'catalog.json'), 'utf8')); }
+        catch { return null; }
+        const project = Array.isArray(catalog.productions) ? catalog.productions.find(item => item?.slug === slug) : null;
+        if (!project) return null;
+        return { project, activity: await readProductionActivity(workspace, project.dir || `productions/${slug}`) };
+    }
+    async function agentView(slug) {
+        const found = await projectRecord(slug);
+        if (!found) return null;
+        let text = '';
+        if (found.activity?.runId) {
+            try { text = (await runAgent('logs', { runId: found.activity.runId, stream: 'events', lines: 160 })).text || ''; }
+            catch { text = ''; }
+        }
+        let execution = { harnesses: [], providers: [], targets: [], defaultTarget: null };
+        try {
+            const config = resolveConfig({ workspace });
+            const { loadAgentConfig } = await import('./agent-config.js');
+            const { readTemplateProviders } = await import('./template-providers.js');
+            const settings = await loadAgentConfig(config);
+            settings.providers = await readTemplateProviders(config);
+            execution = agentExecutionCatalog(settings);
+            const enabled = settings.targets.filter(item => item.enabled);
+            for (const provider of execution.providers) {
+                const compatible = enabled.filter(item => {
+                    try { combineAgent(config, settings, { target: item.name, providerTarget: provider.id }); return true; }
+                    catch { return false; }
+                }).map(item => item.name);
+                provider.harnesses = compatible.length ? compatible : enabled.map(item => item.name);
+            }
+        } catch {
+            try { execution = agentExecutionCatalog(await runAgent('config')); }
+            catch { /* 没有本机 Agent 配置时仍显示监视窗口。 */ }
+        }
+        return { activity: found.activity, lines: formatAgentConsole(text), targets: execution.targets, execution };
+    }
+    const modelCache = new Map();
+    async function agentModels(provider, target) {
+        const key = `${provider || ''}\n${target || ''}`;
+        const cached = modelCache.get(key);
+        if (cached && Date.now() - cached.at < 60000) return cached.value;
+        const list = agentDeps?.listConnectionModels || (await import('./agent-models.js')).listConnectionModels;
+        const value = await list(resolveConfig({ workspace }), { providerTarget: provider, target });
+        modelCache.set(key, { at: Date.now(), value });
+        return value;
+    }
+    async function launchAgent(options) {
+        if (agentLaunch) throw appError('AGENT_BUSY', '已有 Agent 在运行。');
+        const task = runAgent('run', options).then(
+            () => ({ ok: true }),
+            error => ({ ok: false, error }),
+        );
+        agentLaunch = task.finally(() => { agentLaunch = null; });
+        const outcome = await Promise.race([
+            task,
+            new Promise(resolve => { setTimeout(() => resolve({ pending: true }), 4000); }),
+        ]);
+        if (outcome.pending) return { started: true };
+        if (!outcome.ok) throw outcome.error;
+        return { started: true, finished: true };
+    }
     const server = http.createServer(async (request, response) => {
         response.setHeader('X-Content-Type-Options', 'nosniff');
         response.setHeader('Referrer-Policy', 'same-origin');
@@ -256,11 +358,61 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                     return json(response, error.code === 'TEMPLATE_BUSY' ? 409 : 400, { error: error.message });
                 }
             }
+            const modelRoute = /^\/api\/projects\/([a-z0-9-]+)\/agent\/models$/.exec(url.pathname);
+            if (modelRoute && request.method === 'GET') {
+                const found = await projectRecord(modelRoute[1]);
+                if (!found) return json(response, 404, { error: '项目不存在。' });
+                try {
+                    const provider = optionalName(url.searchParams.get('provider'), '请选择 Provider。');
+                    const target = optionalName(url.searchParams.get('target'), '请选择已配置的执行器。');
+                    return json(response, 200, await agentModels(provider, target));
+                } catch (error) {
+                    return json(response, 400, { error: error.message || '无法读取可选模型。' });
+                }
+            }
+            const agentRoute = /^\/api\/projects\/([a-z0-9-]+)\/agent$/.exec(url.pathname);
+            if (agentRoute && request.method === 'POST') {
+                if (request.headers['x-remake-action'] !== 'agent' || request.headers['sec-fetch-site'] === 'cross-site') {
+                    request.resume();
+                    return json(response, 403, { error: '请从项目页面操作 Agent。' });
+                }
+                try {
+                    const body = await readSmallJson(request);
+                    const found = await projectRecord(agentRoute[1]);
+                    if (!found) return json(response, 404, { error: '项目不存在。' });
+                    const running = found.activity && ['preparing', 'running'].includes(found.activity.status);
+                    if (body.mode === 'cancel') {
+                        if (!found.activity?.runId || !running) return json(response, 409, { error: '当前没有正在运行的 Agent。' });
+                        return json(response, 200, await runAgent('cancel', { runId: found.activity.runId }));
+                    }
+                    if (!['prompt', 'continue'].includes(body.mode)) return json(response, 400, { error: '不支持的 Agent 操作。' });
+                    if (running || agentLaunch) return json(response, 409, { error: '已有 Agent 在运行。' });
+                    const target = optionalName(body.target, '请选择已配置的执行器。');
+                    const providerTarget = optionalName(body.providerTarget, '请选择 Provider。');
+                    const model = optionalModel(body.model);
+                    const instruction = cleanInstruction(body.instruction, { required: body.mode === 'prompt' });
+                    const options = body.mode === 'continue'
+                        ? { continueRun: found.activity?.runId, instruction, target, providerTarget, model }
+                        : { production: agentRoute[1], instruction, target, providerTarget, model };
+                    if (body.mode === 'continue' && !found.activity?.runId) return json(response, 400, { error: '这个项目还没有可以继续的运行。' });
+                    const result = await launchAgent(options);
+                    return json(response, result.finished ? 200 : 202, result);
+                } catch (error) {
+                    if (response.headersSent || response.destroyed) return;
+                    const status = error.code === 'AGENT_BUSY' ? 409 : error.code === 'NOT_FOUND' ? 404 : 400;
+                    return json(response, status, { error: error.message || '无法启动 Agent。' });
+                }
+            }
             if (!['GET', 'HEAD'].includes(request.method)) {
                 response.setHeader('Allow', 'GET, HEAD');
                 return json(response, 405, { error: '只支持读取。' });
             }
             if (url.pathname === '/api/health') return json(response, 200, { ok: true, service: 'video-remake' }, head);
+            if (agentRoute && ['GET', 'HEAD'].includes(request.method)) {
+                const view = await agentView(agentRoute[1]);
+                if (!view) return json(response, 404, { error: '项目不存在。' }, head);
+                return json(response, 200, view, head);
+            }
             const activityRoute = /^\/api\/projects\/([a-z0-9-]+)\/activity$/.exec(url.pathname);
             if (activityRoute && ['GET', 'HEAD'].includes(request.method)) {
                 let catalog;
@@ -300,7 +452,7 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
         }
     });
     let shutdown;
-    server.shutdownTasks = () => shutdown ||= Promise.allSettled([references.close(), reproduction.close(), templates.close()]);
+    server.shutdownTasks = () => shutdown ||= Promise.allSettled([references.close(), reproduction.close(), templates.close(), Promise.resolve(agentAbort.abort())]);
     server.on('close', () => { void server.shutdownTasks(); });
     return server;
 }
