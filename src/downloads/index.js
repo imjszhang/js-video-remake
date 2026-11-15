@@ -17,7 +17,7 @@ export async function downloadDoctor(config, deps = {}) {
 
 export async function downloadReference(config, { url, quality } = {}, deps = {}) {
     const provider = createDownloadProvider(config);
-    const downloaded = await provider.download(config.download, { url, quality: quality ?? config.quality }, { ...deps, env: deps.env ?? config.env });
+    const downloaded = await provider.download(config.download, { url, quality: quality ?? config.quality }, { ...deps, env: deps.env ?? config.env, proxy: config.proxy });
     try {
         const register = () => {
             if (deps.signal?.aborted) throw appError('DOWNLOAD_CANCELLED', '下载任务已停止，原片保留但未登记。');

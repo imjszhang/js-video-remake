@@ -200,6 +200,18 @@ test('Hub 上传响应散列不匹配时不报告成功且不自动重试', asyn
     assert.equal(calls, 1);
 });
 
+test('Hub 文件传输使用视频任务代理，不直连非本机 Hub', async (t) => {
+    const { dir } = await fixture(t);
+    const config = JSON.parse(await fs.readFile(path.join(dir, 'video-remake.json'), 'utf8'));
+    config.proxy = 'socks5://127.0.0.1:9';
+    config.media.video.hubUrl = 'http://10.255.255.1:8899/mcp/comfyui';
+    await fs.writeFile(path.join(dir, 'video-remake.json'), JSON.stringify(config));
+    await fs.writeFile(path.join(dir, 'tiny.txt'), 'x');
+    const started = Date.now();
+    await assert.rejects(executeHubFiles(['upload', 'tiny.txt'], { cwd: dir, env: {} }), { code: 'HUB_CONNECTION_FAILED' });
+    assert.ok(Date.now() - started < 1500);
+});
+
 test('Hub 上传途中原文件增长会终止流，不接受变化后的文件', async (t) => {
     const { dir, run } = await fixture(t);
     await fs.writeFile(path.join(dir, 'changing.bin'), 'abc');

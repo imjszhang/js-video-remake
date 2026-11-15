@@ -7,6 +7,9 @@ import { runDownloadProcess } from './process.js';
 const OUTPUT_LIMIT = 8 * 1024 * 1024;
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mkv', '.mov', '.m4v']);
 const COMMON_ARGS = ['--ignore-config', '--no-plugin-dirs', '--no-cache-dir', '--js-runtimes', `node:${process.execPath}`, '--no-playlist', '--playlist-items', '1', '--no-warnings', '--no-progress'];
+function withProxy(args, proxy) {
+    return proxy ? ['--proxy', proxy, ...args] : args;
+}
 
 function httpUrl(input) {
     try {
@@ -92,13 +95,13 @@ export const ytDlp = {
             };
             // --no-playlist alone does not reject playlist-only URLs. Inspect one entry
             // without downloading before permitting the download operation.
-            const info = await invoke([...COMMON_ARGS, '--dump-single-json', '--flat-playlist', '--skip-download', '--', inputUrl]);
-            const final = await invoke([...COMMON_ARGS, '--no-simulate', '--abort-on-error',
+            const info = await invoke(withProxy([...COMMON_ARGS, '--dump-single-json', '--flat-playlist', '--skip-download', '--', inputUrl], deps.proxy));
+            const final = await invoke(withProxy([...COMMON_ARGS, '--no-simulate', '--abort-on-error',
                 '--no-overwrites', '--no-write-info-json', '--no-write-playlist-metafiles',
                 '--format', `bv*[height<=${selected}]+ba/b[height<=${selected}]/bv[height<=${selected}]`,
                 '--merge-output-format', 'mp4', '--remux-video', 'mp4',
                 '--output', path.join(directory, 'video.%(ext)s'),
-                '--print', 'after_move:%(.{filepath,title,webpage_url,channel,uploader,duration})j', '--', inputUrl]);
+                '--print', 'after_move:%(.{filepath,title,webpage_url,channel,uploader,duration})j', '--', inputUrl], deps.proxy));
             if (typeof final.filepath !== 'string' || !final.filepath || final.filepath.includes('\0')) throw appError('DOWNLOAD_PROTOCOL', '下载结果缺少原片路径。');
             const requested = path.resolve(directory, final.filepath);
             if (!isWithin(directory, requested)) throw appError('DOWNLOAD_PROTOCOL', '下载结果路径越出本次下载目录。');

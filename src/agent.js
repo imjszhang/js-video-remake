@@ -182,7 +182,7 @@ async function buildPlan(config, options, runId = 'preview') {
         '参考原片通过 SOURCE.json 指针读取；不要复制原片。成片和对比片使用本机 HyperFrames。',
         '保留已有制作、草稿和交付版本；不因执行成功自动定稿、发布或发送消息。',
         '如缺少工具、素材或证据，请明确报告。完成时说明修改、验证结果和未完成事项。',
-        hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会自动读取项目设置。' : '',
+        hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会读取项目 Hub 设置，并使用出片任务的代理。' : '',
         production ? `本次制作: ${production}` : '',
         ...[...files.values()].map(file => `\n--- 项目输入 ${file.path} (sha256:${file.sha256}) ---\n${file.content}\n--- 输入结束 ---`),
         mediaAuthorization(config, Boolean(hubPlan)),

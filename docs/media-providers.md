@@ -245,7 +245,7 @@ Hub 模式会完成 MCP 初始化、读取工具目录，并调用 `server_info`
 
 Hub 以设备管理素材与任务：本机文件上传后使用 `asset_id` / `workflow_id`；生成返回 `task.id`，查询与取回使用 `task_id`。每次逻辑提交使用固定的 `request_id`，超时后先查询已有任务。`fetch_outputs` 返回 Hub 素材与下载地址，须携带同一设备令牌下载到当前项目所在设备，取得实际本地文件后才运行 `media:land`。Hub 上的路径、素材 ID 和远端 `prompt_id` 都不能直接当作本机文件。
 
-文件传输脚本默认读取项目的 `hubUrl` / `hubTokenFile`，从服务地址提取服务标识；只上传或下载文件，生成仍由 Agent 直接调用 MCP：
+文件传输脚本默认读取项目的 `hubUrl` / `hubTokenFile`，从服务地址提取服务标识，并使用出片任务的代理（未单独设置时用顶层 `proxy`）。只上传或下载文件，生成仍由 Agent 直接调用 MCP：
 
 ```bash
 node scripts/mcp-hub-files.js upload ./reference.png

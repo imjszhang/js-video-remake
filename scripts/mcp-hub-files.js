@@ -9,6 +9,8 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { resolveConfig } from '../src/config.js';
 import { appError } from '../src/errors.js';
+import { httpFetch } from '../src/http.js';
+import { mediaProxy } from '../src/media/config.js';
 import { parseHubUrl, readHubToken } from '../src/media/mcp-hub.js';
 
 export const MAX_ASSET_BYTES = 512 * 1024 * 1024;
@@ -232,7 +234,7 @@ export async function executeHubFiles(argv, { fetchImpl = fetch, env = process.e
     if (!tokenFile) throw fail('HUB_TOKEN_INVALID', '请配置 hubTokenFile 或 --token-file。');
     connection.token = await privateToken(tokenFile);
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
-    const deps = { fetchImpl, signal: signal ? AbortSignal.any([signal, timeout]) : timeout };
+    const deps = { fetchImpl: httpFetch(mediaProxy(config, 'video'), fetchImpl), signal: signal ? AbortSignal.any([signal, timeout]) : timeout };
     try {
         if (args.action === 'upload') return await upload(localPath(args.input, cwd), connection, deps);
         return await download(args.input, localPath(args.out, cwd), args.sha256, connection, deps);

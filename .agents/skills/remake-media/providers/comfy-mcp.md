@@ -51,7 +51,7 @@ Hub 的文件位于服务端。客户端的 `workflow_path` 或 `out_dir` 不能
 4. 保存返回的 `task.id`。使用 `job(task_id=..., action="status")` 查询；`action="wait"` 每次最多等 15 秒。`task.prompt_id` 用于远端核对，Hub 的 `job` / `fetch_outputs` 接受的是 `task_id`。若提交为 `uncertain`，保留任务信息，先核对远端队列，不重复生成。
 5. 用 `fetch_outputs(task_id=...)` 取回结果到 Hub，得到 `assets` 与每项的 `download_path`。用同一设备令牌下载到当前项目所在设备；不要给任意第三方 URL 转发令牌。确认文件实际存在、格式正确，再落地。
 
-文件传输使用项目脚本，默认读取 `hubUrl` / `hubTokenFile`，不会调用生成工具：
+文件传输使用项目脚本，默认读取 `hubUrl` / `hubTokenFile`，并走出片任务的代理，不会调用生成工具：
 
 ```bash
 node scripts/mcp-hub-files.js upload ./reference.png

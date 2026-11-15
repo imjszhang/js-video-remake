@@ -52,6 +52,12 @@ test('download uses isolated yt-dlp options and imports its result into the loca
     assert.equal(args[args.indexOf('--format') + 1], 'bv*[height<=720]+ba/b[height<=720]/bv[height<=720]');
     assert.equal(args[args.indexOf('--output') + 1], path.join(deps.calls[1].options.cwd, 'video.%(ext)s'));
     assert.ok(args.includes('--no-simulate'));
+    assert.equal(deps.calls[0].args.includes('--proxy'), false);
+    config.proxy = 'socks5://127.0.0.1:1080';
+    const proxied = downloader(config);
+    await downloadReference(config, { url: 'https://example.com/watch?v=demo', quality: '720' }, proxied);
+    assert.equal(proxied.calls[0].args[0], '--proxy');
+    assert.equal(proxied.calls[0].args[1], 'socks5://127.0.0.1:1080');
     assert.equal(await fs.readFile(result.file, 'utf8'), 'video fixture');
     const source = JSON.parse(await fs.readFile(path.join(config.workspace, result.references[0].dir, 'SOURCE.json'), 'utf8'));
     assert.equal(source.title, '下载标题');
