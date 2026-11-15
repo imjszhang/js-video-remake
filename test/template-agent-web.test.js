@@ -351,3 +351,35 @@ test('CLI video:generate accepts a separate new subtitle manuscript', async t =>
     assert.equal(result.data.subtitleScript, subtitleScript);
     assert.ok(deps.calls[0].options.instruction.includes(subtitleScript));
 });
+
+test('account model discovery endpoint uses the selected target and blocks cross-site requests', async t => {
+    const f = await fixture(t);
+    const calls = [];
+    const api = await web(t, f, { ...mocks(), discoverCodexModels: async (config, target) => {
+        calls.push(target);
+        return { models: [{ id: 'account-model' }], source: 'codex-account' };
+    } });
+    const blocked = await api.request('providers/codex-models', { method: 'POST', data: { target: 'fixture-agent' }, headers: { 'Sec-Fetch-Site': 'cross-site' } });
+    assert.equal(blocked.status, 403);
+    const response = await api.request('providers/codex-models', { method: 'POST', data: { target: 'fixture-agent' } });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).models, [{ id: 'account-model' }]);
+    assert.deepEqual(calls, ['fixture-agent']);
+});
+
+test('selected dropdown model is written into the actual Agent execution configuration', async t => {
+    const f = await fixture(t), deps = mocks();
+    const execute = deps.executeAgent;
+    let selectedModel;
+    deps.executeAgent = async (config, action, options, hooks) => {
+        const runtime = JSON.parse(await fs.readFile(options.agentConfig, 'utf8'));
+        selectedModel = runtime.targets.find(item => item.name === options.target).backend.model;
+        return execute(config, action, options, hooks);
+    };
+    const api = await web(t, f, deps);
+    const response = await api.request('jobs', { method: 'POST', data: { ...requestBody, model: 'discovered-model' } });
+    assert.equal(response.status, 202);
+    const job = await api.wait(await response.json());
+    assert.equal(job.status, 'succeeded', job.error);
+    assert.equal(selectedModel, 'discovered-model');
+});

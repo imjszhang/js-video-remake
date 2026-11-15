@@ -165,6 +165,8 @@ test('loads the checked-in example with every target disabled without looking up
         env,
     });
     assert.equal(settings.defaultTarget, 'deepseek-flash');
+    assert.ok(settings.targets.every(entry => path.isAbsolute(entry.harness.executable)));
+    assert.ok(settings.targets.every(entry => entry.harness.executable.includes(`${path.sep}node_modules${path.sep}.bin${path.sep}`)));
     assert.ok(settings.targets.every((entry) => entry.enabled === false));
     assert.deepEqual(settings.targets.map((entry) => entry.name), ['codex-native', 'claude-local', 'deepseek-flash', 'codex-api']);
 });

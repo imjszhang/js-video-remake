@@ -61,6 +61,7 @@ node cli/remake.js video:import my-video
 | `video:add <slug> --id <素材>` | 把台账素材复制到包内 `assets/<类型>/`，输出可贴进入口 HTML 的片段 |
 | `video:list <slug>` | 列出各版本是否已安装、已渲染、已导入 |
 | `video:pack <slug> [--video 名字 --out x.video]` | 把模板包打成 `.video`，默认写到 `deliverables/` |
+| `video:template <slug> [--video 名字 --title 名称]` | 把复刻工程另存为可替换口播和音乐的模板，原包保留。新包里原来的 `build` 会保留为 `film:build`，并在模板构建前运行 |
 | `video:unpack <文件.video> [--as 制作标识]` | 导入外部模板并新建制作，默认使用模板 id；不安装依赖、不执行模板脚本 |
 | `video:generate <slug> --video 包名 --title 名称 --prompt 描述 [--target Agent --mode derive\|revise]` | 用提示词调用 Agent；默认创建独立模板 v1，revise 迭代同一模板，并检查、生成静态预览 |
 | `video:remix <slug> --title 名称 [--video 包名 --style 样式.json]` | 低层复制与公共样式兼容命令，恢复默认输入并保留原包 |

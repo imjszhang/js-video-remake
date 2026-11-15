@@ -273,7 +273,7 @@ export async function forkVideo(config, { slug, from, name, skipInstall = false,
     const source = await resolveVideo(config, slug, from);
     const videos = await listVideos(source.productionDir);
     const prefix = source.name.replace(/-v\d+$/, '');
-    const lineage = source.lineage ? (templateLineage || nextTemplateLineage(source, videos, { mode: source.lineage.kind === 'source' ? 'derive' : 'revise', title: source.lineage.title })) : null;
+    const lineage = templateLineage || (source.lineage ? nextTemplateLineage(source, videos, { mode: source.lineage.kind === 'source' ? 'derive' : 'revise', title: source.lineage.title }) : null);
     const target = assertName(name ?? (lineage ? `${lineage.id}-v${lineage.version}` : await nextName(videos, prefix)));
     const pkgDir = path.join(source.productionDir, 'videos', target);
     const sourceHash = await treeHash(source.dir);
@@ -455,6 +455,7 @@ export async function listVideosCommand(config, { slug } = {}) {
             name: pkg.name, version: pkg.lineage?.version ?? pkg.manifest.version ?? null, dir: rel(config, pkg.dir),
             ...(pkg.lineage ? { lineage: pkg.lineage } : {}),
             forkedFrom: pkg.manifest.source?.forkedFrom?.video ?? null,
+            template: pkg.manifest.template?.format === TEMPLATE_FORMAT,
             installed: await exists(path.join(pkg.dir, 'node_modules', 'hyperframes')),
             rendered: output ? await exists(output) : false,
             imported: Boolean(draft), frozen: Boolean(draft?.package?.treeHash),

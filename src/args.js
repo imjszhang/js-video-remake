@@ -6,7 +6,7 @@ const COMMANDS = new Set([
     'paths', 'deliver', 'compare',
     'check', 'captions', 'normalize', 'studio', 'timeline',
     'media:doctor', 'media:prepare', 'media:image', 'media:video', 'media:speech', 'media:transcribe', 'media:land',
-    'video:new', 'video:fork', 'video:list', 'video:render', 'video:import', 'video:add', 'video:pack', 'video:unpack', 'video:remix', 'video:generate',
+    'video:new', 'video:fork', 'video:list', 'video:render', 'video:import', 'video:add', 'video:pack', 'video:unpack', 'video:remix', 'video:generate', 'video:template',
     'template:script', 'template:voice',
     'voice:save', 'voice:list',
     'agent:config', 'agent:doctor', 'agent:plan', 'agent:run',
@@ -174,6 +174,7 @@ Reproduction options:
   video:import <slug>         Copy a verified render into drafts/<name>/ and the catalog [--video NAME --force]
   video:add <slug> --id ASSET Copy a ledger asset into a package [--video NAME --force]
   video:pack <slug>           Pack a template package into deliverables/<slug>/templates/<id>-vN.video [--video NAME --out FILE.video --force]
+  video:template <slug>       把复刻工程收成可填写口播和音乐的模板，原包保留 [--video 包名 --title 名称 --as 目录名 --skip-install]
   video:unpack <FILE.video>   导入外部模板并新建制作 [--as SLUG]；不执行安装或脚本
   video:remix <slug>         另存为新模板 --title 名称 [--video 包名 --style 样式.json]；清除个人输入
   video:generate <slug>      Agent 生成新模板 --title 名称 --prompt 修改要求 [--video 包名 --target Agent --mode derive|revise]
@@ -239,7 +240,7 @@ Options:
   --out FILE                  media:image / media:video / media:speech 输出，或 video:pack 的 .video 文件
   --lang zh|en                template:script 提词稿语言（默认 zh）
   --format txt|srt|json|cards template:script 输出格式（默认 txt；不加 --out 时写到标准输出）
-  --skip-install              video:new / video:fork: do not run npm in the package
+  --skip-install              video:new / video:fork / video:template: do not run npm in the package
   --alpha keep|flatten        Alpha still or video: ProRes 4444, or composite on black
   --max-chars N               Caption cue length (default 16)
   --task image|video|speech|transcribe

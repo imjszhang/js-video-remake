@@ -1,6 +1,6 @@
 {
   "name": "video-remake",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "对标视频复刻工作台：管理本地参考视频，生成独立复刻项目模板并验证 Agent 执行",
   "author": "imjszhang",
   "license": "MIT",
@@ -25,14 +25,17 @@
     "agent:cancel": "node cli/remake.js agent:cancel",
     "agent:test": "node --test test/agent*.test.js",
     "repro:test": "node --test test/repro-*.test.js",
-    "repro:doctor": "node cli/remake.js repro:doctor"
+    "repro:doctor": "node cli/remake.js repro:doctor",
+    "agent:harness:check": "node scripts/check-agent-harnesses.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource-variable/noto-sans-sc": "5.3.1",
     "hyperframes": "0.8.191",
-    "js-agent-runtime": "file:vendor/js-agent-runtime-0.2.3-mcp.1.tgz"
+    "js-agent-runtime": "file:vendor/js-agent-runtime-0.2.3-mcp.2.tgz",
+    "@anthropic-ai/claude-code": "2.1.321",
+    "@openai/codex": "0.169.0"
   },
   "overrides": {
     "@modelcontextprotocol/client@2.2.0": "2.3.0",

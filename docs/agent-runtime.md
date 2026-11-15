@@ -1,6 +1,29 @@
 # Agent 执行
 
-本项目通过 `js-agent-runtime` 调用本机 Agent CLI，记录任务输入、执行结果和日志。当前锁定本仓 `vendor/` 中的 `0.2.3-mcp.1` 本地打包版本，包含显式 MCP 接入接口，尚未发布到 npm；`npm ci` 从锁文件和仓内包复现安装。Node.js 要求为 22.15.0 或更新版本；DeepSeek Harness `@deepseek-ai/dsh@0.2.1-rc.2` 已作为项目依赖锁定，`npm ci` 会安装到本项目 `node_modules/.bin/dsh`。Codex 和 Claude Code 仍需在本机单独准备。
+本项目通过 `js-agent-runtime` 调用本机 Agent CLI，记录任务输入、执行结果和日志。当前锁定本仓 `vendor/` 中的 `0.2.3-mcp.2` 本地打包版本，包含显式 MCP 接入接口，尚未发布到 npm；`npm ci` 从锁文件和仓内包复现安装。Node.js 要求为 22.15.0 或更新版本；DeepSeek Harness `@deepseek-ai/dsh@0.2.1-rc.2` 已作为项目依赖锁定，`npm ci` 会安装到本项目 `node_modules/.bin/dsh`。Claude Code `2.1.321`、Codex CLI `0.169.0` 也作为项目依赖精确锁定，统一由 `npm ci` 安装。
+
+## 执行器版本与升级
+
+默认目标使用 `harness.executable: "managed"`：按 adapter 选择本项目 `node_modules/.bin` 内的程序，不依赖 PATH、桌面应用或仓库外副本。载入配置时核对安装包版本与根 `package.json` 的精确版本；缺失或不符立即报错，要求运行 `npm ci`。此规则同样适用于模板和 repro 的目标解析，托管安装位置属于工作台，不属于外部复刻工程。
+
+| adapter | 安装包 | 锁定版本 |
+| --- | --- | --- |
+| `claude-code` | `@anthropic-ai/claude-code` | `2.1.321` |
+| `codex` | `@openai/codex` | `0.169.0` |
+| `deepseek-harness` | `@deepseek-ai/dsh` | `0.2.1-rc.2` |
+
+也支持系统安装：将 `executable` 设为 `claude`、`codex`、`dsh`（通过 PATH 查找）或绝对路径。这是显式选择外部管理，项目不锁定、不升级该程序。已有外部路径不会自动迁移；改为 `managed` 才使用托管版本。认证、模型、权限和启用状态保持独立配置。系统入口可以是动态选择已安装版本的包装脚本，不应将它展开后固化到带版本号的路径。`claude-config` 的版本检查保留启动时的 HOME，使这类入口能找到安装位置，同时仍通过临时 `CLAUDE_CONFIG_DIR` 隔离版本检查的 Claude 配置；其他认证模式不变。
+
+安装和核验：
+
+```bash
+npm ci
+npm run agent:harness:check
+```
+
+升级流程：修改根 `package.json` 中对应包的**精确版本**（不用 `^`、`~` 或 `latest`），执行 `npm install --package-lock-only --ignore-scripts` 更新锁文件，再执行 `npm ci`、`npm run agent:harness:check`、`npm test` 和 `git diff --check`。同步本表与 CHANGELOG，提交依赖声明和锁文件；不要在独立工具目录升级。回退时恢复之前的依赖声明和锁文件，再运行 `npm ci`。`js-agent-runtime` 仍通过仓内 vendor 包独立锁定，升级需替换打包文件并更新锁文件。
+
+版本检查只调用 `--version`，不发送模型请求。升级 Claude 后，还需核对其模型别名解析；CLI 版本锁定不等于服务端模型锁定，`configured` 仍沿用 Claude 设置。需要真实调用验证时应单独执行受控任务。
 
 ## 配置与首次运行
 
@@ -26,12 +49,12 @@ npm run agent:run -- --instruction '只读检查本项目并报告结果'
 
 | 示例目标 | 本机 CLI / 认证方式 | 模型与上下文 |
 | --- | --- | --- |
-| `codex-native` | `codex`，使用 CLI 已有的 ChatGPT 登录 | `gpt-6.1-sol` |
-| `claude-local` | `claude`，使用 CLI 的用户配置及认证 | `configured`，由本机设置选择模型；`contextMode: project` |
+| `codex-native` | 项目托管 `codex`，使用 CLI 已有的 ChatGPT 登录 | `gpt-6.1-sol` |
+| `claude-local` | 项目托管 `claude`，使用 CLI 的用户配置及认证 | `configured`，由本机设置选择模型；`contextMode: project` |
 | `deepseek-flash` | 本项目的 `dsh`，从环境变量或 `.env.agent.local` 取 `DEEPSEEK_API_KEY` | `deepseek-flash`；Messages 根地址 `https://api.deepseek.com/anthropic`；`contextMode: project` |
-| `codex-api` | `codex`，从 `OPENAI_API_KEY` 取密钥 | `gpt-6.1-sol`；Responses 地址 `https://api.openai.com/v1` |
+| `codex-api` | 项目托管 `codex`，从 `OPENAI_API_KEY` 取密钥 | `gpt-6.1-sol`；Responses 地址 `https://api.openai.com/v1` |
 
-先在对应 CLI 完成本机登录，或设置相应 API key 环境变量 / `.env.agent.local`。`harness.executable` 可以改为本机 CLI 的绝对路径。四个示例的权限均为 `workspace-write`；现有本机配置保留用户选择的权限。
+先在对应 CLI 完成本机登录，或设置相应 API key 环境变量 / `.env.agent.local`。`harness.executable` 默认为 `managed`，也可以改为系统命令名或绝对路径。四个示例的权限均为 `workspace-write`；现有本机配置保留用户选择的权限。
 
 ```bash
 npm run agent:config

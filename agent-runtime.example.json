@@ -11,7 +11,7 @@
       "enabled": false,
       "harness": {
         "adapter": "codex",
-        "executable": "codex",
+        "executable": "managed",
         "permission": "workspace-write"
       },
       "backend": {
@@ -24,7 +24,7 @@
       "enabled": false,
       "harness": {
         "adapter": "claude-code",
-        "executable": "claude",
+        "executable": "managed",
         "permission": "workspace-write",
         "contextMode": "project"
       },
@@ -38,7 +38,7 @@
       "enabled": false,
       "harness": {
         "adapter": "deepseek-harness",
-        "executable": "dsh",
+        "executable": "managed",
         "permission": "workspace-write",
         "contextMode": "project"
       },
@@ -56,7 +56,7 @@
       "enabled": false,
       "harness": {
         "adapter": "codex",
-        "executable": "codex",
+        "executable": "managed",
         "permission": "workspace-write"
       },
       "backend": {

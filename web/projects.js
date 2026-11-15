@@ -1,9 +1,9 @@
 /** 项目视图：项目头、两个工作区页签、归档菜单，以及把模板编辑器和放映区接到当前项目上。 */
 import { api } from './api.js';
-import { $, $$, statusLabel, notify } from './ui.js';
+import { $, $$, node, statusLabel, notify } from './ui.js';
 import { state, activeProject, changed, updateHash } from './state.js';
 import { projectTitle } from './library-model.js';
-import { mountTemplateEditor } from './template-editor.js';
+import { mountTemplateEditor, preferTemplateVersion } from './template-editor.js';
 import { workspaceForProject, templatePlaybackVideo, groupTemplatePackages } from './workspace.js';
 import { chooseDraftVersion, videoForVersion } from './versions.js';
 import { renderTemplates } from './templates.js';
@@ -51,7 +51,34 @@ function renderHeader(project) {
     $('#screening').hidden = !project.videos.length;
     $('#empty-project').hidden = Boolean(project.videos.length);
     $('#empty-project h3').textContent = hasTemplate ? '还没有可播放的视频' : '这个项目还在制作中';
-    $('#empty-project p').textContent = hasTemplate ? '模板和静态截图已在工作台就绪。进入「预览与导出」，合成后的视频会出现在这里。' : '登记成片或审阅草稿后，会自动出现在这里。';
+    $('#empty-project p').textContent = hasTemplate
+        ? '模板和静态截图已在工作台就绪。进入「预览与导出」，合成后的视频会出现在这里。'
+        : project.codePackages?.length
+            ? '登记成片后可以在这里播放。也可以把上面的复刻工程收成模板，再填写口播和音乐。'
+            : '登记成片或审阅草稿后，会自动出现在这里。';
+    renderAdopt(project);
+}
+
+function renderAdopt(project) {
+    const packages = project.codePackages || [];
+    const panel = $('#adopt-panel');
+    panel.hidden = !packages.length;
+    if (!packages.length) return;
+    const select = $('#adopt-package');
+    const title = $('#adopt-title');
+    const previous = select.value;
+    select.replaceChildren(...packages.map(pkg => {
+        const option = node('option', '', pkg.title && pkg.title !== pkg.name ? `${pkg.title} · ${pkg.name}` : pkg.name);
+        option.value = pkg.name;
+        return option;
+    }));
+    if (packages.some(pkg => pkg.name === previous)) select.value = previous;
+    const signature = packages.map(pkg => pkg.name).join('\n');
+    if (panel.dataset.signature !== signature) {
+        panel.dataset.signature = signature;
+        delete title.dataset.edited;
+    }
+    if (!title.dataset.edited) title.value = packages.find(pkg => pkg.name === select.value)?.title || select.value;
 }
 
 /** 打开（或在重新载入后刷新）一个项目。同一项目保持当前页签，换项目时按地址栏或默认规则决定。 */
@@ -85,6 +112,27 @@ export function closeProject() {
     $('#project-view').hidden = true;
 }
 
+async function adoptTemplate(event) {
+    event.preventDefault();
+    const project = activeProject();
+    if (!project) return;
+    const name = $('#adopt-package').value;
+    const title = $('#adopt-title').value.trim();
+    const status = $('#adopt-status');
+    const button = $('#adopt-submit');
+    button.disabled = true;
+    status.textContent = '正在收成模板，原来的复刻工程会保留。';
+    try {
+        const result = await api.adoptTemplate(project.slug, name, title);
+        preferTemplateVersion(project.slug, result.video);
+        state.workspace = 'template';
+        await actions.reload();
+        notify(`已把「${name}」收成模板。可以替换口播和音乐，也可以继续改造画面。`);
+        status.textContent = '';
+    } catch (error) { status.textContent = error.message; }
+    finally { button.disabled = false; }
+}
+
 async function toggleArchive() {
     const project = activeProject();
     if (!project) return;
@@ -115,6 +163,14 @@ export function initProjects(injected) {
         });
     }
     $('#archive-project').addEventListener('click', toggleArchive);
+    $('#adopt-package').addEventListener('change', () => {
+        const title = $('#adopt-title');
+        if (title.dataset.edited) return;
+        const pkg = activeProject()?.codePackages?.find(item => item.name === $('#adopt-package').value);
+        title.value = pkg?.title || $('#adopt-package').value;
+    });
+    $('#adopt-title').addEventListener('input', event => { event.target.dataset.edited = '1'; });
+    $('#adopt-form').addEventListener('submit', adoptTemplate);
     document.addEventListener('click', event => { if (!event.target.closest('.project-menu')) closeMenu(); });
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || !$('.project-menu[open]')) return;

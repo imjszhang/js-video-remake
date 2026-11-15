@@ -6,6 +6,8 @@ import { appError } from './errors.js';
 import { resolveConfig } from './config.js';
 import { resolveVideo, getTemplateEditor, getTemplateCaptions, saveTemplateCaptions, getTemplateVoice, getTemplateVoiceAsset, saveTemplateInputs, storeTemplateAsset, runTemplateAction, saveVideoStyle, getTemplatePromptScript } from './videos.js';
 
+import { discoverClaudeModels } from './claude-models.js';
+import { discoverCodexModels } from './codex-models.js';
 import { probeTemplateProvider } from './template-provider-probe.js';
 import { saveTemplateProvider } from './template-providers.js';
 import { templateAgentOptions } from './template-agent.js';
@@ -205,7 +207,7 @@ export function createTemplateController({ root, deps = {}, sendAsset }) {
     return {
         withPackageLock,
         async handle(request, response, url) {
-            const match = /^\/api\/projects\/([a-z0-9-]+)\/templates\/([a-z0-9-]+-v[0-9]+)\/(editor|captions(?:\/original)?|prompt|voice(?:\/audio)?|providers(?:\/test|\/models)?|inputs|style|assets|jobs(?:\/[a-f0-9-]+(?:\/cancel)?)?|preview\/[^/]+)$/.exec(url.pathname);
+            const match = /^\/api\/projects\/([a-z0-9-]+)\/templates\/([a-z0-9-]+-v[0-9]+)\/(editor|captions(?:\/original)?|prompt|voice(?:\/audio)?|providers(?:\/test|\/models|\/codex-models|\/claude-models)?|inputs|style|assets|jobs(?:\/[a-f0-9-]+(?:\/cancel)?)?|preview\/[^/]+)$/.exec(url.pathname);
             if (!match) return false;
             const options = { slug: match[1], name: match[2] };
             const route = match[3], method = request.method;
@@ -245,6 +247,11 @@ export function createTemplateController({ root, deps = {}, sendAsset }) {
                 } else if (route === 'captions' && method === 'PUT') {
                     const body = await readJson(request);
                     json(response, 200, await withPackageLock(options, () => saveTemplateCaptions(config, { ...options, rows: body?.rows, revision: body?.revision, inputs: body?.inputs })));
+                } else if (['providers/codex-models', 'providers/claude-models'].includes(route) && method === 'POST') {
+                    const body = await readJson(request);
+                    await getTemplateEditor(config, options);
+                    const discover = route === 'providers/claude-models' ? deps.discoverClaudeModels || discoverClaudeModels : deps.discoverCodexModels || discoverCodexModels;
+                    json(response, 200, await discover(config, body.target, deps));
                 } else if (['providers/test', 'providers/models'].includes(route) && method === 'POST') {
                     const body = await readJson(request);
                     await getTemplateEditor(config, options);

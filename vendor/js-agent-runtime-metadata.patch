@@ -1,0 +1,16 @@
+--- a/dist/metadata.js
++++ b/dist/metadata.js
+@@ -22,8 +22,11 @@
+     if (execution.credential)
+         delete env[execution.credential.envVar];
+     if (kind === "version") {
+-        env.HOME = stateDir;
+-        env.USERPROFILE = stateDir;
++        // claude-config launchers may locate their installation relative to HOME.
++        // Keep the launch HOME for metadata too; isolate CLI settings separately below.
++        const configuredClaude = execution.adapter.id === "claude-code" && backend.auth === "claude-config";
++        env.HOME = configuredClaude ? execution.process.env.HOME ?? homedir() : stateDir;
++        env.USERPROFILE = configuredClaude ? execution.process.env.USERPROFILE ?? env.HOME : stateDir;
+         if (execution.adapter.id === "codex")
+             env.CODEX_HOME = path.join(stateDir, "codex-version");
+         if (execution.adapter.id === "claude-code")

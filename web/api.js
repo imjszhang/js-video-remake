@@ -39,5 +39,8 @@ export const api = {
     projects: () => call('api/projects', { method: 'GET' }),
     importTemplate: (file, slug) => upload(`api/templates/import${slug ? `?${new URLSearchParams({ slug })}` : ''}`, 'import', file),
     packTemplate: (slug, name) => post(`api/projects/${encodeURIComponent(slug)}/templates/${encodeURIComponent(name)}`, 'pack'),
+    adoptTemplate: (slug, name, title) => post(`api/projects/${encodeURIComponent(slug)}/packages/${encodeURIComponent(name)}/template`, 'adopt', {
+        body: JSON.stringify({ title }), headers: { 'Content-Type': 'application/json' },
+    }),
     archiveProject: (slug, archived) => post(`api/projects/${encodeURIComponent(slug)}/${archived ? 'restore' : 'archive'}`, 'archive'),
 };

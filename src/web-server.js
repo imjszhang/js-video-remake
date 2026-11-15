@@ -1,5 +1,7 @@
 import { readCatalog, writeCatalog } from './catalog.js';
+import { appError } from './errors.js';
 import { listVideos, packVideo, unpackVideo } from './videos.js';
+import { adoptVideo } from './template-adopt.js';
 import { resolveConfig } from './config.js';
 import http from 'node:http';
 import fs from 'node:fs/promises';
@@ -68,6 +70,31 @@ function json(response, status, body, head = false) {
     const output = JSON.stringify(body);
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(output), 'Cache-Control': 'no-store' });
     response.end(head ? undefined : output);
+}
+
+async function readSmallJson(request) {
+    if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
+        request.resume();
+        throw appError('INVALID_INPUT', '请求需要 JSON 内容。');
+    }
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+        size += chunk.length;
+        if (size > 32 * 1024) {
+            request.resume();
+            throw appError('TOO_LARGE', '请求内容过大。');
+        }
+        chunks.push(chunk);
+    }
+    try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw appError('INVALID_INPUT', '请求内容必须是 JSON 对象。');
+        return body;
+    } catch (error) {
+        if (error.code) throw error;
+        throw appError('INVALID_INPUT', '请求内容不是有效的 JSON。');
+    }
 }
 
 async function sendMedia(request, response, asset, download) {
@@ -197,6 +224,24 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                 }
                 return;
             }
+            const adopt = /^\/api\/projects\/([a-z0-9-]+)\/packages\/([a-z0-9-]+-v[0-9]+)\/template$/.exec(url.pathname);
+            if (adopt && request.method === 'POST') {
+                if (request.headers['x-remake-action'] !== 'adopt' || request.headers['sec-fetch-site'] === 'cross-site') {
+                    request.resume();
+                    return json(response, 403, { error: '请从项目页面把复刻工程收成模板。' });
+                }
+                try {
+                    const body = await readSmallJson(request);
+                    const result = await adoptVideo(resolveConfig({ workspace }), {
+                        slug: adopt[1], name: adopt[2], title: body.title, skipInstall: true,
+                    });
+                    return json(response, 201, result);
+                } catch (error) {
+                    if (response.headersSent || response.destroyed) return;
+                    const status = error.code === 'ALREADY_EXISTS' ? 409 : error.code === 'NOT_FOUND' ? 404 : error.code === 'TOO_LARGE' ? 413 : 400;
+                    return json(response, status, { error: error.message || '无法收成模板。' });
+                }
+            }
             const pack = /^\/api\/projects\/([a-z0-9-]+)\/templates\/([a-z0-9-]+-v[0-9]+)$/.exec(url.pathname);
             if (pack && request.method === 'POST') {
                 if (request.headers['x-remake-action'] !== 'pack' || request.headers['sec-fetch-site'] === 'cross-site') {
@@ -219,8 +264,9 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                 const { projects, warnings } = await readWebLibrary(workspace);
                 for (const project of projects) {
                     const packages = await listVideos(path.join(workspace, 'productions', project.slug));
-                    project.templatePackages = packages.filter(pkg => pkg.manifest.template?.format === 'video-template@1')
-                        .map(pkg => ({ name: pkg.name, title: pkg.manifest.title || pkg.name, lineage: pkg.lineage }));
+                    const describe = pkg => ({ name: pkg.name, title: pkg.manifest.title || pkg.name, lineage: pkg.lineage });
+                    project.templatePackages = packages.filter(pkg => pkg.manifest.template?.format === 'video-template@1').map(describe);
+                    project.codePackages = packages.filter(pkg => pkg.manifest.template?.format !== 'video-template@1').map(pkg => ({ name: pkg.name, title: pkg.manifest.title || pkg.name }));
                 }
                 return json(response, 200, { projects, warnings }, head);
             }

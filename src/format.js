@@ -323,7 +323,8 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         for (const video of data.videos) {
             const state = [video.installed ? '已安装' : '未安装', video.rendered ? '已渲染' : '未渲染', video.imported ? '已导入（冻结）' : '未导入'].join('，');
             const label = video.lineage ? `${video.lineage.title} · ${video.lineage.kind === 'source' ? '原版 ' : ''}v${video.lineage.version}` : `${video.name} v${video.version ?? '?'}`;
-            write(`${label}  [${video.name}]${video.lineage?.origin ? `  ← ${video.lineage.origin.title} v${video.lineage.origin.version}` : ''}  ${state}`);
+            const role = video.template ? '模板' : '复刻工程';
+            write(`${label}  [${video.name}]  ${role}${video.lineage?.origin ? `  ← ${video.lineage.origin.title} v${video.lineage.origin.version}` : ''}  ${state}`);
         }
         return;
     }
@@ -355,6 +356,13 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         write('放映室已可查看项目；准备素材并渲染后才能播放。');
         write(`下一步进入 ${data.dir}，运行 npm ci、npm run inputs -- --init、npm run build，按 SCRIPT.md 录制。`);
         write(`素材检查通过后，在工作区运行 remake video:render ${data.slug}，再运行 remake video:import ${data.slug} 登记成片。`);
+        return;
+    }
+    if (data?.command === 'video:template') {
+        write(`已把 ${data.from} 收成模板「${data.title}」: ${data.dir}`);
+        write('画面和时间轴保持原样。可以替换口播和音乐；填写其中任何一项会替换原来的整条声音。');
+        if (data.preservedBuild) write('原来的 build 脚本已保留为 npm run film:build，模板构建会先运行它，再处理声音。');
+        write(`下一步: 在模板工作台填写素材，或运行 remake video:pack ${data.slug} --video ${data.video}`);
         return;
     }
     if (data?.command === 'video:pack') {

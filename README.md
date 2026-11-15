@@ -8,7 +8,7 @@
 
 [快速开始](#快速开始) · [制作流程](#选择你的制作流程) · [文档](#命令与详细文档) · [反馈问题](https://github.com/imjszhang/js-video-remake/issues)
 
-[![Version](https://img.shields.io/badge/version-0.2.0-orange)](https://github.com/imjszhang/js-video-remake/releases/tag/v0.2.0)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://github.com/imjszhang/js-video-remake/releases/tag/v0.3.0)
 
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.15-339933?logo=nodedotjs&logoColor=white)
 ![HyperFrames](https://img.shields.io/badge/HyperFrames-0.8.191-6366f1)
@@ -21,7 +21,7 @@
 
 提供网页界面和命令行。视频在本机渲染，模型和素材服务按需接入。
 
-> **当前版本：0.2.0 · 测试版。** 核心流程仍在迭代，接口、模板格式和配置可能调整。使用前请备份本地制作数据。查看[更新记录](CHANGELOG.md)与[版本约定](docs/versioning.md)。
+> **当前版本：0.3.0 · 正式发布。** 核心流程仍在迭代，接口、模板格式和配置可能调整。使用前请备份本地制作数据。查看[更新记录](CHANGELOG.md)与[版本约定](docs/versioning.md)。
 
 ## 为什么用 video-remake
 
@@ -107,6 +107,7 @@ npm start
 2. 从参考创建制作，记录制作目标、参考分析和分镜安排。同一条参考可用于多份制作。
 3. 自己或让 Agent 创建并编写代码视频包，准备所需图片、视频、声音和字幕，再检查、预览、渲染。
 4. 将渲染结果登记为草稿，在「成片放映」中与原片同步对比；需要分享对比结果时导出竖屏对比片，确认后登记正式交付。
+5. 要把这次复刻交给别人换口播和音乐：在项目页选择「把复刻工程收成模板」，或运行 `remake video:template <slug>`。画面和时间轴保持原样，之后可以预览、合成并导出 `.video`。人物、字幕和画面文字要改时，收成后再用「改造模板」。
 
 创建制作只建立目录和记录，创建视频包只提供工程起点；原片分析、场景编写和素材准备仍需完成。命令行步骤见[制作工程、渲染与交付](docs/production-workflow.md)。
 

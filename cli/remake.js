@@ -23,6 +23,7 @@ import { runDoctor } from '../src/doctor.js';
 import { appError } from '../src/errors.js';
 import { mediaDoctor, mediaPrepare, mediaImage, mediaVideo, mediaLand, mediaSpeech, mediaTranscribe } from '../src/media/index.js';
 import { addVideoAsset, checkVideo, forkVideo, importVideo, listVideosCommand, newVideo, packVideo, renderVideo, unpackVideo, remixTemplate, getTemplatePromptScript, generateClonedTemplateVoice } from '../src/videos.js';
+import { adoptVideo } from '../src/template-adopt.js';
 import { listVoiceProfiles, saveVoiceProfile } from '../src/voice-profile.js';
 
 export async function execute(parsed, env = process.env, deps = {}) {
@@ -251,6 +252,11 @@ export async function execute(parsed, env = process.env, deps = {}) {
         if (action === 'render') return ok(await renderVideo(config, { slug, name: flags.video }, deps));
         if (action === 'import') return ok(await importVideo(config, { slug, name: flags.video, force: flags.force }, deps));
         if (action === 'pack') return ok(await packVideo(config, { slug, name: flags.video, out: flags.out, force: flags.force }, deps));
+        if (action === 'template') {
+            return ok(await adoptVideo(config, {
+                slug, name: flags.video, title: flags.title, as: flags.as, skipInstall: flags.skipInstall,
+            }, deps));
+        }
         return ok(await addVideoAsset(config, { slug, name: flags.video, id: flags.id, force: flags.force }));
     }
     if (['check', 'captions', 'normalize', 'studio', 'timeline'].includes(parsed.command)) {

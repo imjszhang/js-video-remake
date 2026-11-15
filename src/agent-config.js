@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { plan, validateTarget } from 'js-agent-runtime';
 import { appError } from './errors.js';
+import { managedHarness } from './agent-harnesses.js';
 
 const DEFAULT_TIMEOUT_MS = 600_000;
 const MAX_TIMEOUT_MS = 86_400_000;
@@ -120,7 +121,10 @@ export async function loadAgentConfig(config, { configPath, env = config.env || 
         }
         let target;
         try {
-            target = validateTarget({ name: entry.name, harness: entry.harness, backend: entry.backend });
+            const harness = entry.harness?.executable === 'managed'
+                ? { ...entry.harness, executable: managedHarness(entry.harness.adapter).executable }
+                : entry.harness;
+            target = validateTarget({ name: entry.name, harness, backend: entry.backend });
             // validateTarget checks shape; planning also validates adapter/auth/protocol.
             // Runtime planning is side-effect free and never reads credentials.
             plan({ runId: 'config-check', workspace, prompt: 'Validate configuration only.', target, timeoutMs, stateDir });

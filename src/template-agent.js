@@ -37,7 +37,7 @@ export async function templateAgentOptions(config, deps = {}) {
                 try { combineAgent(config, settings, { target: item.name, providerTarget: group.id }); return true; } catch { return false; }
             }).map(item => item.name);
             const original = enabled.find(item => item.name === group.id);
-            return { ...group, baseURL: original.backend.baseURL || details.providerUrl || '', protocol: original.backend.protocol || (original.harness.adapter === 'codex' ? 'responses' : 'anthropic-messages'), managed: false, hasApiKey: false, label: details.provider, providerUrl: details.providerUrl, compatibleTargets,
+            return { ...group, baseURL: original.backend.baseURL || details.providerUrl || '', protocol: original.backend.protocol || (original.harness.adapter === 'codex' ? 'responses' : 'anthropic-messages'), managed: false, hasApiKey: false, ...(original.harness.adapter === 'codex' && original.backend.auth === 'chatgpt' ? { modelDiscovery: 'codex-account' } : original.harness.adapter === 'claude-code' && original.backend.auth === 'claude-config' ? { modelDiscovery: 'claude-session' } : {}), label: details.provider, providerUrl: details.providerUrl, compatibleTargets,
                 models: [...new Set([...group.models, ...targets.filter(item => group.names.includes(item.name)).flatMap(item => [item.configuredModel, item.actualModel]).filter(Boolean)])] };
         });
         for (const item of settings.providers) {

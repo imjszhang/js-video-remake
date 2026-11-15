@@ -69,6 +69,17 @@
           <div class="project-actions"><span id="project-status" class="status-badge"></span><details class="project-menu"><summary aria-label="更多项目操作" title="更多项目操作">⋯</summary><div class="project-menu-panel"><button type="button" id="archive-project">归档项目</button></div></details></div>
         </div>
 
+        <section id="adopt-panel" class="adopt-panel" hidden>
+          <div>
+            <h3>把复刻工程收成模板</h3>
+            <p>原来的复刻工程保留。新模板沿用当时的画面和时间轴，可以替换口播和音乐，再预览、合成或导出 .video。填写口播或音乐的任何一项都会换掉原来的整条声音。人物、字幕和画面文字仍在画面里，要改它们就在收成之后使用「改造模板」。</p>
+          </div>
+          <form id="adopt-form">
+            <label>复刻工程<select id="adopt-package"></select></label>
+            <label>模板名称<input id="adopt-title" type="text" maxlength="160" required autocomplete="off" aria-label="模板名称"></label>
+            <div class="adopt-actions"><button id="adopt-submit" type="submit">收成模板</button><span id="adopt-status" role="status"></span></div>
+          </form>
+        </section>
         <div class="workspace-tabs" role="tablist" aria-label="项目工作区">
           <button type="button" id="template-tab" role="tab" aria-selected="true" aria-controls="template-workspace" data-workspace="template">模板工作台 <span id="template-tab-count"></span></button>
           <button type="button" id="playback-tab" role="tab" aria-selected="false" aria-controls="playback-workspace" data-workspace="playback" tabindex="-1">成片放映 <span id="playback-tab-count"></span></button>

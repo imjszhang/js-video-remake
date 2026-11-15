@@ -21,6 +21,8 @@ const actionLabels = { prepare: '准备录制稿', check: '检查素材', previe
 const active = context => current === context && context.generation === generation;
 const isRunning = job => job?.status === 'running';
 
+export function preferTemplateVersion(slug, video) { selectVersion(slug, video); }
+
 function selectVersion(slug, video) {
     selections.set(slug, video);
     try { sessionStorage.setItem(`template-editor-version:${slug}`, video); } catch { /* Optional browser persistence. */ }
@@ -226,6 +228,11 @@ async function startAction(context, action) {
         payload.target = context.agentTarget;
         payload.providerTarget = context.providerTarget;
         payload.model = context.agentModel;
+        if (context.data.agent?.providers && !payload.model?.trim()) {
+            context.status.textContent = '请选择模型或填写自定义模型 ID。';
+            context.agentStatus.textContent = context.status.textContent;
+            return;
+        }
         if (!payload.title || !payload.prompt) {
             const message = !payload.title ? '请为新模板填写一个名称。' : '请描述希望 Agent 如何修改当前模板。';
             context.status.textContent = message; context.agentStatus.textContent = message;
@@ -507,9 +514,10 @@ function renderAgent(context, container) {
         if (!selectedProvider?.compatibleTargets.includes(context.agentTarget)) {
             selectedProvider = providers.find(item => item.names.includes(context.agentTarget) && item.compatibleTargets.includes(context.agentTarget)) || providers.find(item => item.compatibleTargets.includes(context.agentTarget));
             context.agentModel = selectedProvider?.models[0] || '';
+            context.customModelInput = false;
         }
         context.providerTarget = selectedProvider?.id;
-        if (!context.agentModel) context.agentModel = selectedProvider?.models[0] || '';
+        if (!context.agentModel && !context.customModelInput) context.agentModel = selectedProvider?.models[0] || '';
         const provider = element('select'); provider.setAttribute('aria-label', 'Provider');
         for (const item of providers) {
             const compatible = item.compatibleTargets.includes(context.agentTarget);
@@ -518,16 +526,58 @@ function renderAgent(context, container) {
         }
         provider.value = context.providerTarget || '';
         harness.addEventListener('change', () => { context.agentTarget = harness.value; render(context); remember(context); });
-        provider.addEventListener('change', () => { context.providerTarget = provider.value; context.agentModel = providers.find(item => item.id === provider.value)?.models[0] || ''; render(context); remember(context); });
-        const model = inputText(context.agentModel); model.maxLength = 160;
-        model.setAttribute('aria-label', '模型 ID'); model.setAttribute('list', 'template-agent-models');
-        const suggestions = element('datalist'); suggestions.id = 'template-agent-models';
-        for (const value of selectedProvider?.models || []) {
-            const option = element('option', '', value === 'configured' ? '使用本机默认模型' : value); option.value = value; suggestions.append(option);
+        provider.addEventListener('change', () => { context.providerTarget = provider.value; context.customModelInput = false; context.agentModel = providers.find(item => item.id === provider.value)?.models[0] || ''; render(context); remember(context); });
+        const model = element('select'); model.setAttribute('aria-label', '模型');
+        context.discoveredModels ||= new Map();
+        const discovered = context.discoveredModels.get(context.providerTarget);
+        const modelIds = [...new Set([...(discovered?.models?.map(item => item.id) || []), ...(selectedProvider?.models || [])])];
+        for (const value of modelIds) {
+            const option = element('option', '', value === 'configured' ? '跟随本机默认模型（版本由执行器决定）' : value);
+            option.value = value; model.append(option);
         }
-        model.addEventListener('input', () => { context.agentModel = model.value.trim(); remember(context); updateAgentAvailability(context); });
-        selection.append(field('Agent Harness', harness), field('Provider', provider), field('模型 ID', model), suggestions);
-        execution.append(element('p', 'editor-hint', '模型可选择或输入。Provider 仅可选择兼容搭配；configured 使用本机默认模型。'));
+        const customOption = element('option', '', '自定义模型 ID…'); customOption.value = '__custom__'; model.append(customOption);
+        const customModel = inputText(context.agentModel); customModel.maxLength = 160;
+        customModel.setAttribute('aria-label', '自定义模型 ID'); customModel.placeholder = '填写接口支持的完整模型 ID';
+        const customField = field('自定义模型 ID', customModel);
+        model.value = !context.customModelInput && modelIds.includes(context.agentModel) ? context.agentModel : '__custom__';
+        customField.hidden = model.value !== '__custom__';
+        model.addEventListener('change', () => {
+            const custom = model.value === '__custom__';
+            context.customModelInput = custom;
+            customField.hidden = !custom;
+            if (custom) {
+                customModel.value = modelIds.includes(context.agentModel) ? '' : context.agentModel || '';
+                context.agentModel = customModel.value.trim();
+                customModel.focus();
+            } else context.agentModel = model.value;
+            remember(context); updateAgentAvailability(context);
+        });
+        customModel.addEventListener('input', () => { context.agentModel = customModel.value.trim(); remember(context); updateAgentAvailability(context); });
+        selection.append(field('Agent Harness', harness), field('Provider', provider), field('模型', model), customField);
+        if (['codex-account', 'claude-session'].includes(selectedProvider?.modelDiscovery)) {
+            const discoveryTarget = selectedProvider.id;
+            const discoveryRoute = selectedProvider.modelDiscovery === 'claude-session' ? 'providers/claude-models' : 'providers/codex-models';
+            const refresh = element('button', 'secondary', discovered?.loading ? '正在读取账号模型…' : '刷新账号模型');
+            refresh.type = 'button'; refresh.disabled = Boolean(discovered?.loading);
+            const loadModels = async () => {
+                context.discoveredModels.set(discoveryTarget, { ...context.discoveredModels.get(discoveryTarget), loading: true });
+                if (active(context)) render(context);
+                try {
+                    const result = await mutate(context, discoveryRoute, { target: discoveryTarget });
+                    context.discoveredModels.set(discoveryTarget, { ...result, loading: false });
+                } catch (error) {
+                    context.discoveredModels.set(discoveryTarget, { ...context.discoveredModels.get(discoveryTarget), loading: false, error: error.message });
+                }
+                if (active(context)) render(context);
+            };
+            refresh.addEventListener('click', loadModels);
+            execution.append(refresh, element('p', 'editor-hint', discovered?.error || (discovered?.models ? '已读取所选执行器的模型列表；保留配置模型和自定义输入。模型实际使用权限以运行结果为准。' : '通过所选执行器查询当前连接，不发送生成请求。')));
+            if (!discovered) {
+                context.discoveredModels.set(discoveryTarget, { loading: true });
+                queueMicrotask(loadModels);
+            }
+        }
+        execution.append(element('p', 'editor-hint', '模型列表来自所选接口的配置，可在“Provider 设置 · 新增与编辑”中获取或编辑。选择仅用于本次任务；跟随默认模型不会固定具体版本。'));
     }
     const detailPanel = element('details', 'agent-connection-details');
     detailPanel.append(element('summary', '', '查看接口与实际模型'));
@@ -565,7 +615,7 @@ function mediaRow(context, kind) {
         captions: '上传替换字幕 JSON，保持原有条数与时间，只修改中英文文字。',
         texts: '上传替换画面文字 JSON，保留原有键名；改完先预览，检查文字排版。',
     };
-    section.append(element('p', '', defaults[kind]));
+    section.append(element('p', '', context.data?.schema?.[kind]?.note || defaults[kind]));
     const currentFile = element('span', 'editor-file-name');
     const getPath = () => kind === 'presenter' ? context.inputs.presenter?.src : context.inputs[kind];
     const setPath = value => {
@@ -727,7 +777,11 @@ function render(context) {
     container.append(navigation);
     renderAgent(context, context.panels.agent);
     const materials = context.panels.materials;
-    materials.append(element('h4', '', '准备这版视频要用的内容'), element('p', 'editor-hint', '填写个人信息、修改字幕，再直接生成口播。人物录像和背景音乐按需添加。'));
+    const inputNames = Object.keys(data.schema || {});
+    const soundtrackOnly = inputNames.length > 0 && inputNames.every(name => name === 'voice' || name === 'music');
+    materials.append(element('h4', '', '准备这版视频要用的内容'), element('p', 'editor-hint', soundtrackOnly
+        ? '可以替换口播和背景音乐。不填则沿用收成模板时的声音。画面、字幕和人物位置保持原样。'
+        : '填写个人信息、修改字幕，再直接生成口播。人物录像和背景音乐按需添加。'));
     if (data.frozen) {
         materials.append(element('p', 'editor-frozen', '这个版本已合成为草稿，素材已锁定。复制一个新版本后可继续编辑。'), actionButton(context, 'fork'));
     }
@@ -743,7 +797,11 @@ function render(context) {
     }
     if (identity.children.length) form.append(identity);
     const media = element('div', 'editor-media-grid');
-    for (const key of ['presenter', 'music']) if (data.schema?.[key]) media.append(mediaRow(context, key));
+    const voiceFromCaptions = Boolean(data.schema?.voice && data.schema?.captions);
+    for (const key of ['presenter', 'voice', 'music']) {
+        if (!data.schema?.[key] || (key === 'voice' && voiceFromCaptions)) continue;
+        media.append(mediaRow(context, key));
+    }
     form.append(media);
     const textFields = element('details', 'editor-text-settings');
     textFields.append(element('summary', '', '替换画面文字（可选）'));
@@ -789,7 +847,7 @@ function render(context) {
         });
     }
 
-    context.voiceEditor = data.schema?.voice ? mountVoiceEditor(materials, context, {
+    context.voiceEditor = voiceFromCaptions ? mountVoiceEditor(materials, context, {
         request, onGenerate: () => startAction(context, 'voice'), fallback: mediaRow(context, 'voice'),
     }) : null;
     const script = element('details', 'editor-script');
@@ -855,7 +913,7 @@ function render(context) {
     } else previews.append(element('p', 'editor-hint', '还没有静态截图。点击“生成静态截图”检查这版模板的画面。'));
     output.append(previews);
     container.append(...Object.values(context.panels));
-    switchStep(context, context.step || editorSteps.get(context.project.slug) || (data.generation ? 'output' : 'agent'));
+    switchStep(context, context.step || editorSteps.get(context.project.slug) || (data.generation ? 'output' : soundtrackOnly ? 'materials' : 'agent'));
     showJob(context, context.job || data.job);
 }
 

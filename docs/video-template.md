@@ -195,6 +195,25 @@ node cli/remake.js video:pack my-template --video template-012345abcdef-v2
 
 旧的 `video:remix --style` 与 `PUT /style` 保留为低层兼容接口，用于已有公共样式配置；它们不是网页提示词创作流程，也不调用 Agent。网页已移除配色、字体、圆角等模板参数控件。
 
+## 从复刻工程收成模板
+
+已经做完的代码视频包可以收成模板，不必先手工补齐整份模板契约：
+
+```bash
+remake video:template <slug> [--video 包名 --title 名称 --as 目录名 --skip-install]
+```
+
+网页在项目页选择「把复刻工程收成模板」。两种入口都另存一个新包，原来的复刻工程不改。
+
+收成后的模板声明 `video-template@1`，因此会出现在模板工作台里，可以检查、预览、合成，并用 `video:pack` 导出 `.video`。它实际接受的输入只有口播 `voice` 和音乐 `music`：
+
+- 都不填时，画面和声音与收成那一刻相同。
+- 填写其中任何一项，构建会静音原来的 `<video>` / `<audio>`，再铺上新的声音。只填音乐时，成片里只剩音乐。
+- 画面源文件是 `src/film.html`。包里原来如果有 `build` 脚本，会保留为 `npm run film:build`，模板构建先运行它，再处理声音。
+- 人物窗、字幕条数和画面文字不会自动变成可填写项。要改这些，收成之后用「改造模板」，或按下一节把输入接进场景。
+
+网页收成不安装依赖。第一次准备、截图或合成时再安装。
+
 ## 做一个模板
 
 1. 从已有的代码视频包 `video:fork` 出新版本。
@@ -219,7 +238,7 @@ node cli/remake.js video:pack my-template --video template-012345abcdef-v2
 
 任务由本地服务异步执行，刷新或关闭网页不会取消；再次打开同一个模板可以继续查看。点击取消、关闭本地服务或服务重启会中断任务，目前不支持服务重启后续跑。
 
-生成新模板时，网页可以分别选择 Agent Harness、Provider 和模型 ID。Provider 来自项目已启用的连接配置，相同连接下的多个模型合并为候选列表，也可以输入该 Provider 支持的模型 ID。Harness 与 Provider 的认证方式、接口协议必须兼容；不兼容的选项会禁用。Claude 的 `configured` 表示使用本机默认模型。候选模型并不代表服务已经确认支持，实际是否可用及返回模型以运行结果为准。
+生成新模板时，网页可以分别选择 Agent Harness、Provider 和模型 ID。Provider 来自项目已启用的连接配置，相同连接下的多个模型合并为下拉候选列表，切换 Provider 时同步更新。选择“自定义模型 ID…”可填写该 Provider 支持的其他模型；未填写时不能提交，不会静默使用默认模型。模型选择保存在当前草稿中，只影响本次任务。Harness 与 Provider 的认证方式、接口协议必须兼容；不兼容的选项会禁用。Claude 的 `configured` 表示使用本机默认模型。候选模型并不代表服务已经确认支持，实际是否可用及返回模型以运行结果为准。
 
 网页选择仅作用于本次任务：服务端生成独立的临时执行配置，使用所选 Provider 的凭据，不改写项目或 Harness 本机默认设置。新 Provider 可以直接在网页的“管理 Provider · 新增 / 编辑”中保存，无需手动修改配置文件。
 
@@ -260,3 +279,7 @@ Provider 表单支持“测试连接”和“获取模型列表”，填写接�
 导出属于只读操作，不写模板包，已合成版本也能导出。个人信息中的身份占位符（如 `{{name}}`）未填写或仍是模板默认值时会拒绝导出并指出具体句号，避免录进占位文字。中英文分开导出；所选语言为空的句子跳过，不改变时间轴。
 
 网页入口在「录制稿」面板；命令行对应 `remake template:script <slug> --video <包名> [--lang zh|en] [--format txt|srt|json|cards]`，不加 `--out` 直接输出到标准输出，例如 `remake template:script demo --video demo-v1 > prompt.txt`。接口为 `GET /prompt?language=zh|en&format=txt|srt|json|cards`，返回带下载文件名的内容。
+
+Codex CLI 的 ChatGPT 登录连接会通过所选执行器的 app-server 协议查询当前账号模型（account/read、model/list），自动加载到模型下拉列表，并支持“刷新账号模型”。查询不创建对话或发送生成请求；仅返回模型 ID、显示名称和默认标志，不回传账号或凭据。列表按分页读取并排除隐藏项，失败时保留配置模型、自定义输入及此前已取得的列表。列表反映 Codex 提供的账号模型目录，不保证每个模型的实时额度或服务状态。选择模型仍通过本次执行配置传入 --model，不修改系统默认模型。
+
+Claude Code 的本机配置连接通过 stream-json 初始化控制协议读取当前连接的可选模型，不发送用户消息或生成请求，并关闭钩子、MCP 和工具。下拉列表优先使用 CLI 返回的 resolvedModel（例如 fable 对应的具体版本），不从 modelSettings 猜测可用性；跟随本机默认模型及自定义输入仍保留。该列表是 CLI 当前连接的选择目录，网关实际推理权限仍需运行验证。
