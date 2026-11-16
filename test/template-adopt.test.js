@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -7,6 +8,8 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
 import { HELP } from '../src/args.js';
+import { resolveConfig } from '../src/config.js';
+import { runTemplateAction } from '../src/videos.js';
 import { createWebServer } from '../src/web-server.js';
 import { downloadedVideo, run, runMain, tempWorkspace } from './helpers.js';
 import { readZip } from '../src/zip.js';
@@ -190,6 +193,76 @@ test('the workbench adopts a remake package without installing or running it', a
     });
     assert.equal(again.status, 400);
     assert.match((await again.json()).error, /已经是模板/);
+});
+
+async function sha(file) {
+    return createHash('sha256').update(await fs.readFile(file)).digest('hex');
+}
+
+test('video:template turns a film package into a template and keeps its renderer', async (t) => {
+    const w = await production(t);
+    await run(['video:new', 'demo', '--as', 'film-v1', '--engine', 'film', '--skip-install', '--width', '1280', '--height', '720', '--fps', '30', '--duration', '2'], w.env);
+    const source = path.join(w.prod, 'videos/film-v1');
+    const renderer = await sha(path.join(source, 'tools/render.mjs'));
+    const runtime = await sha(path.join(source, 'runtime/film.js'));
+    const created = await run(['video:template', 'demo', '--video', 'film-v1', '--skip-install', '--title', 'film 模板'], w.env);
+    assert.equal(created.data.engine, 'film@1');
+    assert.equal(created.data.preservedBuild, false);
+    const adopted = path.join(w.directory, created.data.dir);
+    assert.equal(await sha(path.join(adopted, 'tools/render.mjs')), renderer);
+    assert.equal(await sha(path.join(adopted, 'runtime/film.js')), runtime);
+    assert.equal(await sha(path.join(source, 'tools/render.mjs')), renderer);
+    for (const file of ['tools/inputs.mjs', 'tools/template-build.mjs', 'tools/template-render.mjs', 'tools/compose.mjs']) {
+        await tool(adopted, ['--check', file]);
+    }
+    const scripts = JSON.parse(await fs.readFile(path.join(adopted, 'package.json'), 'utf8')).scripts;
+    assert.equal(scripts.build, 'node tools/template-build.mjs');
+    assert.equal(scripts.player, 'node tools/build.mjs');
+    const manifest = JSON.parse(await fs.readFile(path.join(adopted, 'video.json'), 'utf8'));
+    assert.equal(scripts.render, `node tools/template-render.mjs --out ${manifest.output}`);
+    assert.match(scripts.check, /tools\/check\.mjs/);
+    assert.equal(manifest.engine, 'film@1');
+    assert.equal(manifest.template.format, 'video-template@1');
+    assert.deepEqual(Object.keys(manifest.template.inputs).sort(), ['music', 'voice']);
+
+    await tool(adopted, ['tools/template-build.mjs']);
+    assert.match(await fs.readFile(path.join(adopted, 'SCRIPT.md'), 'utf8'), /成片 2 秒/);
+    assert.equal(await fs.access(path.join(adopted, '.film-audio/soundtrack.wav')).then(() => true, () => false), false);
+    await fs.mkdir(path.join(adopted, 'inputs'), { recursive: true });
+    await fs.writeFile(path.join(adopted, 'inputs/voice.wav'), wav(2));
+    await fs.writeFile(path.join(adopted, 'inputs.json'), '{"voice":"inputs/voice.wav","music":null}\n');
+    await tool(adopted, ['tools/template-build.mjs']);
+    const soundtrack = await fs.readFile(path.join(adopted, '.film-audio/soundtrack.wav'));
+    assert.equal(soundtrack.subarray(0, 4).toString(), 'RIFF');
+    assert.match(await fs.readFile(path.join(adopted, 'SCRIPT.md'), 'utf8'), /inputs\/voice\.wav/);
+    assert.equal(await fs.readFile(path.join(adopted, 'index.html'), 'utf8'), await fs.readFile(path.join(source, 'index.html'), 'utf8'));
+
+    const calls = [];
+    const preview = await runTemplateAction(resolveConfig({ workspace: w.directory }), { slug: 'demo', name: created.data.video, action: 'preview' }, {
+        runCommand: async (executable, args) => {
+            calls.push({ executable, args });
+            if (args.includes('--png-dir')) {
+                await fs.mkdir(path.join(adopted, '.work/preview'), { recursive: true });
+                await fs.writeFile(path.join(adopted, '.work/preview/f00003.png'), Buffer.from([1, 2, 3]));
+            }
+            if (args.includes('--json')) return { exitCode: 0, stdout: '{"ok":true,"errors":[],"warnings":[],"info":[]}', stderr: '' };
+            return { exitCode: 0, stdout: '', stderr: '' };
+        },
+    });
+    assert.equal(preview.previewFiles.includes('f00003.png'), true);
+    const stills = calls.find(call => call.args.includes('--png-dir'));
+    assert.equal(stills.args[0], 'tools/render.mjs');
+    assert.ok(stills.args.includes('--frames'));
+    await assert.rejects(
+        runTemplateAction(resolveConfig({ workspace: w.directory }), { slug: 'demo', name: created.data.video, action: 'generate', title: '改画面', prompt: '换成别的' }, { runCommand: async () => ({ exitCode: 0, stdout: '', stderr: '' }) }),
+        error => error.code === 'VIDEO_INVALID' && /改造画面/.test(error.message),
+    );
+
+    const packed = await run(['video:pack', 'demo', '--video', created.data.video, '--force'], w.env);
+    const names = readZip(await fs.readFile(path.join(w.directory, packed.data.output))).map(entry => entry.name);
+    assert.ok(names.some(name => name.endsWith('/tools/render.mjs')));
+    assert.ok(names.some(name => name.endsWith('/tools/template-render.mjs')));
+    assert.equal(names.some(name => name.includes('/.film-audio/')), false);
 });
 
 test('several remake packages require --video', async (t) => {

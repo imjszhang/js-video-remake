@@ -699,8 +699,13 @@ async function inspectTemplate(buffer) {
         if (pkg.dependencies?.hyperframes || lock.packages?.['node_modules/hyperframes']) {
             throw appError('VIDEO_INVALID', 'film 模板不使用 HyperFrames，package.json 和锁文件里不能有它。');
         }
-        if (pkg.scripts?.render !== `node tools/render.mjs --out ${manifest.output}`) {
-            throw appError('VIDEO_INVALID', 'film 模板的 render 脚本必须调用 tools/render.mjs。');
+        const directRender = `node tools/render.mjs --out ${manifest.output}`;
+        const templateRender = `node tools/template-render.mjs --out ${manifest.output}`;
+        if (pkg.scripts?.render !== directRender && pkg.scripts?.render !== templateRender) {
+            throw appError('VIDEO_INVALID', 'film 模板的 render 脚本必须调用 tools/render.mjs 或 tools/template-render.mjs。');
+        }
+        if (pkg.scripts.render === templateRender && !contents.has('tools/template-render.mjs')) {
+            throw appError('VIDEO_INVALID', 'film 模板声明了 template-render，但包里没有 tools/template-render.mjs。');
         }
     } else {
         const expected = (await readJson(ROOT_PACKAGE)).dependencies.hyperframes;
@@ -1270,10 +1275,8 @@ export async function runTemplateAction(config, { slug, name, action, at, title,
     if (!['prepare', 'check', 'preview', 'compose', 'fork', 'remix', 'export', 'generate', 'voice'].includes(action)) throw invalid('不支持的模板操作。');
     const pkg = await editorPackage(config, { slug, name });
     cancelled(deps.signal);
-    // Filling inputs, captions, voice, previews and compose run the template's
-    // inputs/build/compose scripts, which a film package does not have.
-    if (isFilm(pkg.manifest) && !['export', 'fork'].includes(action)) {
-        throw appError('VIDEO_INVALID', 'film 引擎的模板暂不支持在模板工作台填写素材和合成，只能打包或复制。');
+    if (isFilm(pkg.manifest) && action === 'generate') {
+        throw appError('VIDEO_INVALID', 'film 模板暂不能用 Agent 改造画面。口播和音乐仍可在模板工作台替换。');
     }
     if (action === 'generate') {
         const { generateTemplate } = await import('./template-agent.js');
@@ -1339,7 +1342,13 @@ export async function runTemplateAction(config, { slug, name, action, at, title,
             await fs.unlink(await editorFile(pkg, `.work/preview/${filename}`));
         }
         await progress('preview', '正在生成预览截图');
-        await runInPackage(config, pkg, process.execPath, [await packageCli(config, pkg), 'snapshot', '--at', moments.join(','), '--no-end', '--output', '.work/preview'], { timeoutMs: INSTALL_TIMEOUT_MS, label: '生成预览' }, deps);
+        if (isFilm(pkg.manifest)) {
+            const last = pkg.manifest.frame.frames - 1;
+            const frames = [...new Set(moments.map(sec => Math.min(last, Math.max(0, Math.round(sec * pkg.manifest.frame.fps)))))];
+            await runInPackage(config, pkg, process.execPath, ['tools/render.mjs', '--entry', pkg.manifest.entry || 'index.html', '--frames', frames.join(','), '--png-dir', '.work/preview'], { timeoutMs: INSTALL_TIMEOUT_MS, label: '生成预览' }, deps);
+        } else {
+            await runInPackage(config, pkg, process.execPath, [await packageCli(config, pkg), 'snapshot', '--at', moments.join(','), '--no-end', '--output', '.work/preview'], { timeoutMs: INSTALL_TIMEOUT_MS, label: '生成预览' }, deps);
+        }
         return { report, previewFiles: await previewFiles(pkg), at: moments };
     }
     await progress('render', '正在合成视频，完成后自动加入放映室');

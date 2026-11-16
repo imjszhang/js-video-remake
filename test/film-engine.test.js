@@ -68,17 +68,17 @@ test('check and timeline on a film package use the copied runtime, not HyperFram
     assert.match(timeline.data.output, /"beats"/);
 });
 
-test('film packages are refused by video:template and by template-editing actions', async (t) => {
+test('a film package can be adopted as a template; agent restyling stays refused', async (t) => {
     const w = await production(t);
     const deps = { runCommand: async () => ({ exitCode: 0, stdout: '', stderr: '' }) };
     await exec(['video:new', 'demo', '--engine', 'film', '--skip-install'], w.env, deps);
-    await assert.rejects(exec(['video:template', 'demo', '--skip-install'], w.env, deps), (error) => error.code === 'VIDEO_INVALID' && /film/.test(error.message));
-    const manifestFile = path.join(w.prod, 'videos/code-v1/video.json');
-    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
-    manifest.template = { format: 'video-template@1', inputs: {} };
-    await fs.writeFile(manifestFile, JSON.stringify(manifest));
+    const created = await exec(['video:template', 'demo', '--skip-install', '--title', 'film'], w.env, deps);
+    assert.equal(created.data.engine, FILM_ENGINE);
     const { runTemplateAction } = await import('../src/videos.js');
     const { resolveConfig } = await import('../src/config.js');
     const config = resolveConfig({ workspace: w.directory });
-    await assert.rejects(runTemplateAction(config, { slug: 'demo', name: 'code-v1', action: 'compose' }, deps), (error) => error.code === 'VIDEO_INVALID' && /film/.test(error.message));
+    await assert.rejects(
+        runTemplateAction(config, { slug: 'demo', name: created.data.video, action: 'generate', title: '改画面', prompt: '换成别的' }, deps),
+        (error) => error.code === 'VIDEO_INVALID' && /改造画面/.test(error.message),
+    );
 });

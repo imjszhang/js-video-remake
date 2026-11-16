@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { appError } from './errors.js';
+import { FILM_ENGINE } from './film/constants.js';
 import { TEMPLATE_FORMAT, forkVideo, resolveVideo } from './videos.js';
 
 const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -223,6 +224,116 @@ const output = JSON.parse(fs.readFileSync(path.join(root, 'video.json'), 'utf8')
 console.log('\\n成片: ' + output);
 `;
 
+// Film packages already own tools/render.mjs, tools/preview.mjs and tools/build.mjs.
+// These extra tools only prepare a replacement soundtrack and mux it after the film renderer.
+const FILM_BUILD_TOOL = `#!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'video.json'), 'utf8'));
+const seconds = Math.round((manifest.frame.frames / manifest.frame.fps) * 1000) / 1000;
+let inputs = {};
+if (fs.existsSync(path.join(root, 'inputs.json'))) inputs = JSON.parse(fs.readFileSync(path.join(root, 'inputs.json'), 'utf8'));
+const voice = inputs.voice || null;
+const music = inputs.music || null;
+const directory = path.join(root, '.film-audio');
+const soundtrack = path.join(directory, 'soundtrack.wav');
+if (!voice && !music) {
+    fs.rmSync(soundtrack, { force: true });
+} else {
+    fs.mkdirSync(directory, { recursive: true });
+    const args = ['-y', '-hide_banner', '-loglevel', 'error'];
+    if (voice) args.push('-i', voice);
+    if (music) args.push('-i', music);
+    if (voice && music) {
+        args.push('-filter_complex', '[0:a]aformat=channel_layouts=stereo,volume=1[v];[1:a]aformat=channel_layouts=stereo,volume=0.35[m];[v][m]amix=inputs=2:duration=longest:normalize=0', '-t', String(seconds));
+    } else {
+        args.push('-t', String(seconds), '-vn');
+    }
+    args.push('-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', soundtrack);
+    const run = spawnSync('ffmpeg', args, { cwd: root, stdio: 'inherit' });
+    if ((run.status ?? 1) !== 0) {
+        console.error('无法把口播和音乐合成替换音轨。请确认已安装 ffmpeg，且素材里有音轨。');
+        process.exit(run.status || 1);
+    }
+}
+const script = [
+    '# 录制说明',
+    '',
+    '成片 ' + seconds + ' 秒。画面和时间轴保持收成模板时的样子。',
+    '',
+    '- 口播：' + (voice || '未填写，使用原来的声音。'),
+    '- 音乐：' + (music || '未填写。'),
+    '',
+    '填写口播或音乐的任何一项后，原来的整条声音会被替换。两项都不填时，声音与收成时相同。',
+    '人物、字幕和画面文字不在这里更换。',
+    '',
+].join('\\n');
+fs.writeFileSync(path.join(root, 'SCRIPT.md'), script);
+`;
+
+const FILM_RENDER_TOOL = `#!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const args = process.argv.slice(2);
+const outIndex = args.indexOf('--out');
+const output = outIndex >= 0 ? args[outIndex + 1] : '';
+if (!output || output.startsWith('--')) {
+    console.error('需要 --out 成片路径。');
+    process.exit(1);
+}
+const forwarded = args.filter((item, index) => item !== '--out' && args[index - 1] !== '--out');
+const soundtrack = path.join(root, '.film-audio', 'soundtrack.wav');
+function run(argv) {
+    const result = spawnSync(process.execPath, argv, { cwd: root, stdio: 'inherit' });
+    if ((result.status ?? 1) !== 0) process.exit(result.status || 1);
+}
+if (!fs.existsSync(soundtrack)) {
+    run(['tools/render.mjs', '--out', output, ...forwarded]);
+    process.exit(0);
+}
+const temporary = output.replace(/\\.mp4$/i, '') + '.silent.mp4';
+try {
+    run(['tools/render.mjs', '--out', temporary, '--no-audio', ...forwarded]);
+    const mix = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', temporary, '-i', soundtrack, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', output], { cwd: root, stdio: 'inherit' });
+    if ((mix.status ?? 1) !== 0) {
+        console.error('替换音轨没有合成进成片。');
+        process.exit(mix.status || 1);
+    }
+} finally {
+    fs.rmSync(path.join(root, temporary), { force: true });
+}
+`;
+
+const FILM_COMPOSE_TOOL = `#!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'video.json'), 'utf8'));
+function step(label, argv) {
+    console.log('\\n== ' + label);
+    const run = spawnSync(process.execPath, argv, { cwd: root, stdio: 'inherit' });
+    if ((run.status ?? 1) !== 0) {
+        console.error('\\n' + label + '失败（退出码 ' + (run.status ?? 1) + '）。');
+        process.exit(run.status || 1);
+    }
+}
+step('检查输入', ['tools/inputs.mjs']);
+step('准备声音', ['tools/template-build.mjs']);
+step('渲染', ['tools/template-render.mjs', '--out', manifest.output]);
+console.log('\\n成片: ' + manifest.output);
+`;
+
 function assertTitle(title) {
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 160 || /[\u0000-\u001f]/.test(title)) throw invalid('请填写 1–160 字的模板名称。');
     return title.trim();
@@ -258,10 +369,6 @@ export async function adoptVideo(config, { slug, name, title, as: asName, skipIn
     if (source.manifest.template?.format === TEMPLATE_FORMAT) {
         throw appError('VIDEO_INVALID', `videos/${source.name} 已经是模板。填写素材、预览和导出用模板工作台，或运行 video:pack。`);
     }
-    // The generated inputs/build/compose tools drive HyperFrames; a film package has none.
-    if (source.manifest.engine === 'film@1') {
-        throw appError('VIDEO_INVALID', 'film 引擎的包还不能用 video:template 收成模板：模板的构建和合成工具依赖 HyperFrames。可以直接在 video.json 写 template 声明后用 video:pack 打包。');
-    }
     const frame = source.manifest.frame;
     if (!frame || typeof frame.fps !== 'number' || !Number.isFinite(frame.fps) || frame.fps <= 0 || !Number.isInteger(frame.frames) || frame.frames <= 0) {
         throw appError('VIDEO_INVALID', '这个复刻工程没有有效的画幅和帧数，不能收成模板。');
@@ -283,8 +390,10 @@ export async function adoptVideo(config, { slug, name, title, as: asName, skipIn
     try {
         const fork = await forkVideo(config, { slug, from: source.name, name: asName, skipInstall, templateLineage: lineage }, deps);
         created = path.resolve(config.workspace, fork.dir);
-        const preservedBuild = await installAdapter(created, { title: chosen, lineage, entry, frame });
-        return { ...fork, command: 'video:template', title: chosen, inputs: ['voice', 'music'], preservedBuild };
+        const preservedBuild = source.manifest.engine === FILM_ENGINE
+            ? await installFilmAdapter(created, { title: chosen, lineage, frame })
+            : await installAdapter(created, { title: chosen, lineage, entry, frame });
+        return { ...fork, command: 'video:template', title: chosen, inputs: ['voice', 'music'], preservedBuild, ...(source.manifest.engine === FILM_ENGINE ? { engine: FILM_ENGINE } : {}) };
     } catch (error) {
         if (created) await fs.rm(created, { recursive: true, force: true });
         throw error;
@@ -353,6 +462,68 @@ async function installAdapter(dir, { title, lineage, entry, frame }) {
     return preservedBuild;
 }
 
+async function installFilmAdapter(dir, { title, lineage, frame }) {
+    const manifestFile = path.join(dir, 'video.json');
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+    const output = manifest.output;
+    if (typeof output !== 'string' || !output.endsWith('.mp4')) throw appError('VIDEO_INVALID', 'film 包的成片输出必须是 .mp4，才能收成模板。');
+    await writeTool(dir, 'tools/inputs.mjs', INPUTS_TOOL);
+    await writeTool(dir, 'tools/template-build.mjs', FILM_BUILD_TOOL);
+    await writeTool(dir, 'tools/template-render.mjs', FILM_RENDER_TOOL);
+    await writeTool(dir, 'tools/compose.mjs', FILM_COMPOSE_TOOL);
+    const pkgFile = path.join(dir, 'package.json');
+    const pkg = JSON.parse(await fs.readFile(pkgFile, 'utf8'));
+    const scripts = { ...(pkg.scripts || {}) };
+    let preservedBuild = false;
+    if (scripts.build && scripts.build !== 'node tools/template-build.mjs') {
+        if (scripts.build === 'node tools/build.mjs') scripts.player = scripts.build;
+        else if (scripts['film:build']) throw appError('VIDEO_INVALID', '这个工程已经有 film:build 脚本，不能再自动收成模板。');
+        else {
+            scripts['film:build'] = scripts.build;
+            preservedBuild = true;
+        }
+    }
+    Object.assign(scripts, {
+        inputs: 'node tools/inputs.mjs',
+        build: 'node tools/template-build.mjs',
+        compose: 'node tools/compose.mjs',
+        render: `node tools/template-render.mjs --out ${output}`,
+    });
+    await writeTool(dir, 'AUTHORING.md', filmAuthoring(Boolean(scripts.player)));
+    await fs.writeFile(pkgFile, `${JSON.stringify({ ...pkg, scripts }, null, 2)}\n`);
+    const seconds = frame.frames / frame.fps;
+    const secondsText = Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(2);
+    manifest.title = title;
+    manifest.commands = {
+        ...(manifest.commands || {}),
+        inputs: 'npm run inputs',
+        build: 'npm run build',
+        compose: 'npm run compose',
+    };
+    manifest.template = {
+        format: TEMPLATE_FORMAT,
+        summary: `由 film 复刻工程收成。画面和时间轴保持原样（${frame.width || '?'}×${frame.height || '?'}，${secondsText} 秒）。可替换口播和音乐；填写其中任何一项会替换原来的整条声音。不填则声音与收成时相同。人物、字幕和画面文字仍写在画面里。`,
+        inputs: {
+            voice: { kind: 'audio', required: false, duration: 'film', note: '一条与成片等长的口播。只要填写了口播或音乐，原来的整条声音就会被替换；都不填则保持原声。' },
+            music: { kind: 'audio', required: false, duration: 'film or longer', note: '不短于成片的音乐。和口播一起填时作为背景，音量较低；只填音乐时成片里只剩音乐。' },
+        },
+        fixed: [
+            '画面、时间轴和画面上的文字保持收成时的样子',
+            '不填口播和音乐时，声音也保持原样',
+            '填写口播或音乐的任何一项后，原来的整条声音被替换',
+        ],
+        pack: { exclude: ['SCRIPT.md', '.work/', '.film-audio/'] },
+        lineage,
+    };
+    await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+    const ignoreFile = path.join(dir, '.gitignore');
+    const ignore = await fs.readFile(ignoreFile, 'utf8').catch(error => error.code === 'ENOENT' ? '' : Promise.reject(error));
+    if (!ignore.includes('.film-audio/')) await fs.writeFile(ignoreFile, `${ignore.replace(/\n?$/, '\n')}.film-audio/\n`);
+    await appendNote(dir, 'README.md', filmReadmeNote(preservedBuild));
+    await appendNote(dir, 'AGENTS.md', filmAgentsNote());
+    return preservedBuild;
+}
+
 function authoring() {
     return `# 模板说明
 
@@ -381,6 +552,44 @@ npm run inputs
 npm run compose
 \`\`\`
 ${preservedBuild ? '\n原来的构建脚本保留为 \`npm run film:build\`。模板构建会先运行它，再处理声音。\n' : ''}`;
+}
+
+function filmAuthoring(player) {
+    return `# 模板说明
+
+这个模板由 film 复刻工程收成。
+
+- 画面仍是原来的入口页面。\`runtime/\`、\`tools/render.mjs\`、\`tools/check.mjs\`、\`tools/preview.mjs\` 保持原样，渲染器不读 HyperFrames 音轨。
+- \`npm run build\` 只根据 \`inputs.json\` 准备替换音轨，并写出 \`SCRIPT.md\`。不改画面。
+- 填写了口播或音乐时，\`npm run render\` 先渲染无声画面，再用 ffmpeg 把整条音轨换上。都不填时，沿用页面自己的 \`exportWav()\`。
+- \`inputs.json\` 只有 \`voice\` 和 \`music\`。不要另加人物、字幕或画面文字输入，除非同时改构建脚本，让这些输入真正生效。
+${player ? '- 可双击播放的单文件页面仍用 `npm run player`（原来的 `tools/build.mjs`）。\n' : ''}`;
+}
+
+function filmReadmeNote(preservedBuild) {
+    return `
+## 可填写模板
+
+画面和时间轴在收成时已经固定。渲染仍走 film 引擎。\`npm run inputs -- --init\` 写出 \`inputs.json\`，里面可以填：
+
+- \`voice\`：与成片等长的口播
+- \`music\`：不短于成片的音乐
+
+填写其中任何一项，都会替换原来的整条声音。都不填时，声音保持原样。
+
+\`\`\`bash
+npm run inputs
+npm run compose
+\`\`\`
+${preservedBuild ? '\n原来的构建脚本保留为 \`npm run film:build\`。模板准备声音时不会自动运行它。\n' : ''}`;
+}
+
+function filmAgentsNote() {
+    return `
+## 模板
+
+本包已收成 film 模板。口播和音乐的约定见 AUTHORING.md。\`npm run build\` 只准备替换音轨，不要改 \`runtime/\` 和 \`tools/render.mjs\`。
+`;
 }
 
 function agentsNote() {

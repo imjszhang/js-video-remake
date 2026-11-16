@@ -170,17 +170,9 @@ function renderAdopt(project) {
 }
 
 function refreshAdoptAction() {
-    const project = activeProject();
-    const pkg = (project?.codePackages || []).find(item => item.name === $('#adopt-package')?.value);
     const button = $('#adopt-submit');
     const status = $('#adopt-status');
     if (!button || !status || status.dataset.busy === '1') return;
-    if (pkg?.engine === 'film') {
-        button.disabled = true;
-        status.dataset.reason = 'film';
-        status.textContent = 'film 引擎的包还不能收成模板。可以在 video.json 写上模板声明后打包成 .video。';
-        return;
-    }
     button.disabled = false;
     if (status.dataset.reason === 'film') {
         status.textContent = '';

@@ -214,6 +214,8 @@ remake video:template <slug> [--video 包名 --title 名称 --as 目录名 --ski
 
 网页收成不安装依赖。第一次准备、截图或合成时再安装。
 
+film 复刻工程同样用 `video:template` 收成。渲染器、`runtime/` 和 `tools/render.mjs` 保持原样，不改成 HyperFrames 音轨。`npm run build` 只按 `inputs.json` 准备一条替换音轨；填了口播或音乐时，渲染先出无声画面，再用 ffmpeg 换上整条声音。都不填则仍用页面自己的 `exportWav()`。预览截图走 `tools/render.mjs`。模板工作台可以检查、预览、合成和打包。用 Agent 改造画面仍只适用于 HyperFrames 模板。
+
 ## 做一个模板
 
 1. 从已有的代码视频包 `video:fork` 出新版本。
