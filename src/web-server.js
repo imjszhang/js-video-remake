@@ -4,6 +4,7 @@ import { agentExecutionCatalog, formatAgentConsole } from './agent-console.js';
 import { combineAgent } from './template-agent-selection.js';
 import { displayModel } from './template-agent-details.js';
 import { appError } from './errors.js';
+import { FILM_ENGINE } from './film/constants.js';
 import { listVideos, packVideo, unpackVideo } from './videos.js';
 import { adoptVideo } from './template-adopt.js';
 import { resolveConfig } from './config.js';
@@ -170,6 +171,12 @@ function optionalModel(value) {
     if (value == null || value === '') return undefined;
     if (value === 'configured' || displayModel(value)) return value;
     throw appError('INVALID_INPUT', '模型 ID 无效，请填写不含空格的模型名称。');
+}
+
+function videoEngine(value) {
+    if (value == null || value === '') return 'hyperframes';
+    if (value === 'hyperframes' || value === 'film') return value;
+    throw appError('INVALID_INPUT', '视频引擎只能是 hyperframes 或 film。');
 }
 
 export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, templateDeps, referenceDeps, agentDeps } = {}) {
@@ -391,9 +398,10 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                     const providerTarget = optionalName(body.providerTarget, '请选择 Provider。');
                     const model = optionalModel(body.model);
                     const instruction = cleanInstruction(body.instruction, { required: body.mode === 'prompt' });
+                    const engine = videoEngine(body.engine);
                     const options = body.mode === 'continue'
-                        ? { continueRun: found.activity?.runId, instruction, target, providerTarget, model }
-                        : { production: agentRoute[1], instruction, target, providerTarget, model };
+                        ? { continueRun: found.activity?.runId, instruction, target, providerTarget, model, engine }
+                        : { production: agentRoute[1], instruction, target, providerTarget, model, engine };
                     if (body.mode === 'continue' && !found.activity?.runId) return json(response, 400, { error: '这个项目还没有可以继续的运行。' });
                     const result = await launchAgent(options);
                     return json(response, result.finished ? 200 : 202, result);
@@ -428,7 +436,9 @@ export function createWebServer({ root = process.cwd(), reproDeps, reproConfig, 
                     const packages = await listVideos(path.join(workspace, 'productions', project.slug));
                     const describe = pkg => ({ name: pkg.name, title: pkg.manifest.title || pkg.name, lineage: pkg.lineage });
                     project.templatePackages = packages.filter(pkg => pkg.manifest.template?.format === 'video-template@1').map(describe);
-                    project.codePackages = packages.filter(pkg => pkg.manifest.template?.format !== 'video-template@1').map(pkg => ({ name: pkg.name, title: pkg.manifest.title || pkg.name }));
+                    project.codePackages = packages.filter(pkg => pkg.manifest.template?.format !== 'video-template@1').map(pkg => ({
+                        name: pkg.name, title: pkg.manifest.title || pkg.name, engine: pkg.manifest.engine === FILM_ENGINE ? 'film' : 'hyperframes',
+                    }));
                 }
                 return json(response, 200, { projects, warnings }, head);
             }

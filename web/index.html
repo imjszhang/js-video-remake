@@ -73,11 +73,12 @@
           <pre id="agent-console-log" role="log" aria-live="polite"></pre>
           <form id="agent-console-form">
             <label class="agent-console-prompt">提示词<textarea id="agent-instruction" rows="3" maxlength="8000" placeholder="写下这一轮要做的事。接着上次改时可以留空。"></textarea></label>
-            <p class="agent-console-help">执行器决定谁来改文件。Provider 是模型服务。可选模型都在「模型」下拉框里；没有列出的，再选「自定义模型 ID」填写。<br>「新开一轮」只按输入框里的话另做一轮。「接着上次改」留在同一次运行上：框里有话就按它改已有结果，留空就从上次停下的地方继续。</p>
+            <p class="agent-console-help">执行器决定谁来改文件。Provider 是模型服务。可选模型都在「模型」下拉框里；没有列出的，再选「自定义模型 ID」填写。引擎决定这一轮新建的代码视频包：HyperFrames 是默认，film 不装 HyperFrames，每一帧只由影片时间决定。已经建好的包保持原来的引擎。<br>「新开一轮」只按输入框里的话另做一轮。「接着上次改」留在同一次运行上：框里有话就按它改已有结果，留空就从上次停下的地方继续。</p>
             <div class="agent-console-actions">
               <label>执行器<select id="agent-harness" aria-label="执行器"></select></label>
               <label>Provider<select id="agent-provider" aria-label="Provider"></select></label>
               <label>模型<select id="agent-model" aria-label="模型"></select></label>
+              <label>引擎<select id="agent-engine" aria-label="视频引擎"><option value="hyperframes">HyperFrames</option><option value="film">film</option></select></label>
               <input id="agent-model-custom" type="text" maxlength="160" placeholder="自定义模型 ID" aria-label="自定义模型 ID" hidden autocomplete="off">
               <button type="submit" id="agent-prompt" class="btn btn-primary" title="不沿用上次任务，只按输入框里的话新做一轮">新开一轮</button>
               <button type="button" id="agent-continue" class="btn btn-ghost" title="留在同一次运行上。有提示就按它修改，留空就从停下的地方继续">接着上次改</button>

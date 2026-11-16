@@ -179,6 +179,7 @@ test('the workbench adopts a remake package without installing or running it', a
     const projects = await (await fetch(`${base}/api/projects`)).json();
     const project = projects.projects.find(item => item.slug === 'demo');
     assert.deepEqual(project.codePackages.map(item => item.name), ['code-v1']);
+    assert.equal(project.codePackages[0].engine, 'hyperframes');
     assert.deepEqual(project.templatePackages.map(item => item.name), [result.video]);
     const editor = await (await fetch(`${base}/api/projects/demo/templates/${result.video}/editor`)).json();
     assert.deepEqual(Object.keys(editor.schema).sort(), ['music', 'voice']);

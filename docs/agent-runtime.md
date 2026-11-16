@@ -130,7 +130,7 @@ npm run agent:run -- --reference local-demo --as my-video \
   --instruction '按这条参考复刻一条竖屏短片'
 ```
 
-`local-demo` 和 `my-video` 换成已登记的参考 ID 和新建制作名。制作名已存在且绑定的是同一条参考时，沿用该项目；绑的是别的参考则停止。`agent:plan` 使用同样参数时只预览，不创建目录。
+`local-demo` 和 `my-video` 换成已登记的参考 ID 和新建制作名。制作名已存在且绑定的是同一条参考时，沿用该项目；绑的是别的参考则停止。`agent:plan` 使用同样参数时只预览，不创建目录。加上 `--engine film` 时，这一轮新建的代码视频包使用 film 引擎；`--engine hyperframes` 则使用 HyperFrames。不写时不额外指定，已有包始终保持自己的引擎。制作工作台的项目页用「引擎」下拉框做同样的选择。
 
 例如将 `my-face` 换成已有制作的 slug：
 

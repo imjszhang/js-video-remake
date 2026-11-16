@@ -119,7 +119,23 @@ function mediaAuthorization(config, hubReady) {
     ].join('\n');
 }
 
-function checkpointPrompt(production, timeoutMs, referenceId, pending = false) {
+function normalizeVideoEngine(value) {
+    if (value == null || value === '') return undefined;
+    if (value === 'hyperframes' || value === 'film') return value;
+    throw appError('INVALID_INPUT', '视频引擎只能是 hyperframes 或 film。');
+}
+
+function videoEngineLine(production, engine) {
+    if (engine === 'film') {
+        return `本轮新建代码视频包使用 film 引擎：video:new ${production} --engine film。已有包保持它自己的引擎，下一版用 video:fork，不要把 film 包改成 HyperFrames，也不要把 HyperFrames 包改成 film。film 的每一帧必须是影片时间的纯函数。`;
+    }
+    if (engine === 'hyperframes') {
+        return `本轮新建代码视频包使用 HyperFrames：video:new ${production}，不要加 --engine film。已有包保持它自己的引擎，下一版用 video:fork。`;
+    }
+    return '';
+}
+
+function checkpointPrompt(production, timeoutMs, referenceId, pending = false, engine) {
     const minutes = Math.max(1, Math.round(timeoutMs / 60000));
     const bound = referenceId ? `，绑定参考 ${referenceId}` : '';
     return [
@@ -129,10 +145,11 @@ function checkpointPrompt(production, timeoutMs, referenceId, pending = false) {
         `本次运行时限约 ${minutes} 分钟。到时或中止后进程会停，已经写进项目目录的文件会留下。`,
         '每得到一段可交接的内容就立刻写入这个项目，不要等整次运行结束再集中落盘。',
         '理解原片时写入参考目录的 ANALYSIS.md 和 TIMELINE.md。开始改画面之前，用 video:new 或 video:fork 建立代码视频包。',
+        videoEngineLine(production, engine),
         `每完成一个阶段，把进度写到 productions/${production}/PROGRESS.md：一行「日期 时间 包名：一句话」，下面用「- 」列出已完成和下一步。`,
         '不要把整项工作押在同一次运行里，也不要重做已经落地的素材。',
         '中止或到时限后，用 agent:run --continue 接着做。要按新要求改已有结果时，再加上 --instruction。',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 }
 
 function clipTask(text, max = 4000) {
@@ -358,6 +375,7 @@ async function buildPlan(config, options, runId = 'preview') {
     if ([...files.values()].reduce((sum, file) => sum + file.bytes, Buffer.byteLength(instruction)) > MAX_CONTEXT_BYTES) {
         throw appError('INVALID_INPUT', 'Agent 文本上下文总计不能超过 1 MiB。');
     }
+    const engine = normalizeVideoEngine(options.engine);
     const prompt = [
         '你正在 video-remake 项目中执行用户交给你的任务。工作目录是实际项目根目录。',
         '遵守以下选定的项目规则和任务要求，只修改完成本次任务需要的文件。',
@@ -366,7 +384,7 @@ async function buildPlan(config, options, runId = 'preview') {
         '如缺少工具、素材或证据，请明确报告。完成时说明修改、验证结果和未完成事项。',
         hubPlan ? '本次运行已加载项目 comfy-hub MCP 服务，连接由运行器提供。通过该服务操作 ComfyUI，沿用项目设备令牌的服务与权限限制。不要读取或输出令牌及客户端私有配置；Hub 文件上传和下载可用 node scripts/mcp-hub-files.js，它会读取项目 Hub 设置，并使用出片任务的代理。' : '',
         production ? `本次制作: ${production}` : '',
-        production ? checkpointPrompt(production, timeout(options.timeoutMs, settings.timeoutMs), referenceId, Boolean(options.pendingProduction)) : '',
+        production ? checkpointPrompt(production, timeout(options.timeoutMs, settings.timeoutMs), referenceId, Boolean(options.pendingProduction), engine) : '',
         ...[...files.values()].map(file => `\n--- 项目输入 ${file.path} (sha256:${file.sha256}) ---\n${file.content}\n--- 输入结束 ---`),
         mediaAuthorization(config, Boolean(hubPlan)),
         `\n用户任务:\n${instruction.trim()}`,

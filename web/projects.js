@@ -73,6 +73,8 @@ function renderConsole(project, view = {}) {
         if (pinned) log.scrollTop = log.scrollHeight;
     }
     renderExecution(view);
+    syncEngine(project);
+    updateTargetDetail();
     $('#agent-prompt').disabled = running;
     $('#agent-continue').disabled = running || !activity?.runId;
     $('#agent-cancel').disabled = !running;
@@ -152,7 +154,8 @@ function renderAdopt(project) {
     const title = $('#adopt-title');
     const previous = select.value;
     select.replaceChildren(...packages.map(pkg => {
-        const option = node('option', '', pkg.title && pkg.title !== pkg.name ? `${pkg.title} · ${pkg.name}` : pkg.name);
+        const name = pkg.title && pkg.title !== pkg.name ? `${pkg.title} · ${pkg.name}` : pkg.name;
+        const option = node('option', '', pkg.engine === 'film' ? `${name}（film）` : name);
         option.value = pkg.name;
         return option;
     }));
@@ -163,6 +166,26 @@ function renderAdopt(project) {
         delete title.dataset.edited;
     }
     if (!title.dataset.edited) title.value = packages.find(pkg => pkg.name === select.value)?.title || select.value;
+    refreshAdoptAction();
+}
+
+function refreshAdoptAction() {
+    const project = activeProject();
+    const pkg = (project?.codePackages || []).find(item => item.name === $('#adopt-package')?.value);
+    const button = $('#adopt-submit');
+    const status = $('#adopt-status');
+    if (!button || !status || status.dataset.busy === '1') return;
+    if (pkg?.engine === 'film') {
+        button.disabled = true;
+        status.dataset.reason = 'film';
+        status.textContent = 'film 引擎的包还不能收成模板。可以在 video.json 写上模板声明后打包成 .video。';
+        return;
+    }
+    button.disabled = false;
+    if (status.dataset.reason === 'film') {
+        status.textContent = '';
+        delete status.dataset.reason;
+    }
 }
 
 /** 打开（或在重新载入后刷新）一个项目。同一项目保持当前页签，换项目时按地址栏或默认规则决定。 */
@@ -210,6 +233,7 @@ async function adoptTemplate(event) {
     const status = $('#adopt-status');
     const button = $('#adopt-submit');
     button.disabled = true;
+    status.dataset.busy = '1';
     status.textContent = '正在收成模板，原来的复刻工程会保留。';
     try {
         const result = await api.adoptTemplate(project.slug, name, title);
@@ -219,7 +243,10 @@ async function adoptTemplate(event) {
         notify(`已把「${name}」收成模板。可以替换口播和音乐，也可以继续改造画面。`);
         status.textContent = '';
     } catch (error) { status.textContent = error.message; }
-    finally { button.disabled = false; }
+    finally {
+        delete status.dataset.busy;
+        refreshAdoptAction();
+    }
 }
 
 async function toggleArchive() {
@@ -347,6 +374,26 @@ function refreshModels() {
     });
 }
 
+function storedEngine(slug) {
+    try {
+        const value = sessionStorage.getItem(`remake-engine:${slug}`);
+        return value === 'film' || value === 'hyperframes' ? value : '';
+    } catch { return ''; }
+}
+
+function syncEngine(project) {
+    const select = $('#agent-engine');
+    if (!select || !project || select.dataset.slug === project.slug) return;
+    const saved = storedEngine(project.slug);
+    const engines = [...new Set((project.codePackages || []).map(pkg => pkg.engine === 'film' ? 'film' : 'hyperframes'))];
+    select.value = saved || (engines.length === 1 ? engines[0] : 'hyperframes');
+    select.dataset.slug = project.slug;
+}
+
+function chosenEngine() {
+    return $('#agent-engine')?.value === 'film' ? 'film' : 'hyperframes';
+}
+
 function chosenModel() {
     const model = $('#agent-model')?.value || '';
     if (model === '__custom__') return $('#agent-model-custom').value.trim();
@@ -358,9 +405,10 @@ function updateTargetDetail() {
     const provider = (consoleCatalog.providers || []).find(item => item.id === $('#agent-provider')?.value);
     const model = chosenModel();
     const modelText = model === 'configured' ? '客户端当前模型' : model || '尚未选择';
+    const engineText = chosenEngine() === 'film' ? 'film' : 'HyperFrames';
     $('#agent-target-detail').textContent = harness || provider
-        ? `执行器 ${harness?.label || '默认'}，Provider ${provider?.label || '当前连接'}，模型 ${modelText}。`
-        : '还没有启用的执行目标。';
+        ? `执行器 ${harness?.label || '默认'}，Provider ${provider?.label || '当前连接'}，模型 ${modelText}，引擎 ${engineText}。`
+        : `还没有启用的执行目标。引擎 ${engineText}。`;
 }
 
 function agentSelection() {
@@ -368,6 +416,7 @@ function agentSelection() {
         target: $('#agent-harness')?.value || undefined,
         providerTarget: $('#agent-provider')?.value || undefined,
         model: chosenModel() || undefined,
+        engine: chosenEngine(),
     };
 }
 
@@ -406,6 +455,7 @@ export function initProjects(injected) {
     }
     $('#archive-project').addEventListener('click', toggleArchive);
     $('#adopt-package').addEventListener('change', () => {
+        refreshAdoptAction();
         const title = $('#adopt-title');
         if (title.dataset.edited) return;
         const pkg = activeProject()?.codePackages?.find(item => item.name === $('#adopt-package').value);
@@ -416,6 +466,14 @@ export function initProjects(injected) {
     $('#agent-harness').addEventListener('change', () => { $('#agent-provider').dataset.signature = ''; $('#agent-model').dataset.signature = ''; renderExecution(); });
     $('#agent-provider').addEventListener('change', () => { $('#agent-model').dataset.signature = ''; renderExecution(); });
     $('#agent-model').addEventListener('change', () => { $('#agent-model-custom').hidden = $('#agent-model').value !== '__custom__'; updateTargetDetail(); });
+    $('#agent-engine').addEventListener('change', () => {
+        const slug = activeProject()?.slug;
+        const engine = chosenEngine();
+        if (slug) {
+            try { sessionStorage.setItem(`remake-engine:${slug}`, engine); } catch { /* 隐私模式仍使用当前选择。 */ }
+        }
+        updateTargetDetail();
+    });
     $('#agent-model-custom').addEventListener('input', updateTargetDetail);
     $('#agent-console-form').addEventListener('submit', event => { event.preventDefault(); void runAgentAction('prompt'); });
     $('#agent-continue').addEventListener('click', () => { void runAgentAction('continue'); });

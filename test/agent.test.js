@@ -58,6 +58,7 @@ test('a production run shows its progress in the workbench and can continue from
     assert.match(continued.plan.instruction, /Inspect this fixture/);
     assert.ok(continued.plan.inputs.some(input => input.path === 'productions/demo/notes.md'));
     assert.match(continued.plan.execution.request.prompt, /video:new/);
+    assert.equal(continued.plan.execution.request.prompt.includes('--engine film'), false);
     assert.match(continued.plan.execution.request.prompt, /--instruction/);
     assert.equal(continued.plan.execution.request.timeoutMs, 5000);
     const revision = await executeAgent(config, 'plan', { continueRun: first.run.id, instruction: '把字幕改短' });
@@ -72,6 +73,21 @@ test('a production run shows its progress in the workbench and can continue from
     stored.owner = { pid: process.pid, hostname: os.hostname() };
     await fs.writeFile(path.join(first.run.runDir, 'run.json'), JSON.stringify(stored));
     await assert.rejects(executeAgent(config, 'plan', { continueRun: first.run.id }), { code: 'AGENT_BUSY' });
+});
+
+test('a production run tells the agent which video engine to create', async (t) => {
+    const { config, workspace } = await fixture(t);
+    await fs.mkdir(path.join(workspace, 'productions/demo'), { recursive: true });
+    await fs.writeFile(path.join(workspace, 'productions/demo/BRIEF.md'), '# brief\n');
+    const catalog = JSON.parse(await fs.readFile(config.catalogPath, 'utf8'));
+    catalog.productions.push({ slug: 'demo', dir: 'productions/demo', referenceIds: [], status: 'commissioned' });
+    await fs.writeFile(config.catalogPath, JSON.stringify(catalog));
+    const film = await executeAgent(config, 'plan', { instruction, production: 'demo', engine: 'film' });
+    assert.match(film.plan.execution.request.prompt, /video:new demo --engine film/);
+    assert.match(film.plan.execution.request.prompt, /不要把 film 包改成 HyperFrames/);
+    const hyperframes = await executeAgent(config, 'plan', { instruction, production: 'demo', engine: 'hyperframes' });
+    assert.match(hyperframes.plan.execution.request.prompt, /不要加 --engine film/);
+    await assert.rejects(executeAgent(config, 'plan', { instruction, production: 'demo', engine: 'webgl' }), { code: 'INVALID_INPUT' });
 });
 
 test('agent run opens a bound production before the model starts', async (t) => {

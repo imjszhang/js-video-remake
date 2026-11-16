@@ -122,6 +122,9 @@ test('project agent console reads the run and can start or continue', async (t) 
     assert.deepEqual(view.lines, ['正在出片']);
     assert.equal(view.targets[0].label, 'Codex · ChatGPT 订阅 · gpt-6.1-sol');
     assert.equal(view.targets[0].default, true);
+    const page = await fs.readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+    assert.match(page, /id="agent-engine"/);
+    assert.match(page, /value="film"/);
     const denied = await fetch(`${base}/api/projects/series/agent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"mode":"prompt","instruction":"改字幕"}',
     });
@@ -150,6 +153,20 @@ test('project agent console reads the run and can start or continue', async (t) 
     assert.equal(custom.status, 200);
     assert.equal(calls.at(-1).options.providerTarget, 'fake');
     assert.equal(calls.at(-1).options.model, 'my-model-1');
+    assert.equal(calls.at(-1).options.engine, 'hyperframes');
+    const film = await fetch(`${base}/api/projects/empty/agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Remake-Action': 'agent' },
+        body: JSON.stringify({ mode: 'prompt', instruction: '用 film', engine: 'film' }),
+    });
+    assert.equal(film.status, 200);
+    assert.equal(calls.at(-1).options.engine, 'film');
+    const badEngine = await fetch(`${base}/api/projects/empty/agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Remake-Action': 'agent' },
+        body: JSON.stringify({ mode: 'prompt', instruction: '换引擎', engine: 'webgl' }),
+    });
+    assert.equal(badEngine.status, 400);
     const invalid = await fetch(`${base}/api/projects/empty/agent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Remake-Action': 'agent' },

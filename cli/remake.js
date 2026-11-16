@@ -67,6 +67,7 @@ export async function execute(parsed, env = process.env, deps = {}) {
             skills: parsed.flags.skill,
             timeoutMs: parsed.flags.timeoutMs,
             continueRun: parsed.flags.continue,
+            engine: parsed.flags.engine,
             runId: parsed.positionals[0],
             stream: parsed.flags.stream,
             lines: parsed.flags.lines,

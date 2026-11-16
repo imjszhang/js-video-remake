@@ -216,6 +216,7 @@ Agent options:
   --skill FILE               Include an explicit skill entrypoint; repeatable
   --timeout-ms N             Execution deadline for this run (1000–86400000 ms)
   --continue RUN_ID          Resume that finished run; add --instruction to revise its result
+  --engine hyperframes|film  Engine for code video packages created in this run
   --check-login              Probe native CLI login status (doctor only)
   --stream NAME              Log stream (default: stdout)
   --lines N                  Tail 1–10000 log lines (default: 100)
