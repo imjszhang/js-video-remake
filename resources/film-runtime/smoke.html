@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>film runtime smoke</title>
+  <style>html, body { margin: 0; background: #000; }</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<script type="module">
+const film = await (await fetch('./film.json')).json();
+const canvas = document.getElementById('view');
+canvas.width = film.width;
+canvas.height = film.height;
+const context = canvas.getContext('2d');
+
+function frame(t) {
+    context.fillStyle = '#0b1020';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#e23d3d';
+    const x = canvas.width * 0.15 + (canvas.width * 0.7) * (t / film.duration);
+    context.beginPath();
+    context.arc(x, canvas.height / 2, 60, 0, Math.PI * 2);
+    context.fill();
+}
+
+// A one-second tone per beat, rendered offline so the picture and the score share one clock.
+async function exportWav() {
+    const sampleRate = 48000;
+    const offline = new OfflineAudioContext(2, Math.ceil(film.duration * sampleRate), sampleRate);
+    for (const beat of film.beats) {
+        const oscillator = offline.createOscillator();
+        const gain = offline.createGain();
+        oscillator.frequency.value = 220;
+        gain.gain.setValueAtTime(0.0001, beat.at);
+        gain.gain.exponentialRampToValueAtTime(0.2, beat.at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, beat.at + 0.4);
+        oscillator.connect(gain).connect(offline.destination);
+        oscillator.start(beat.at);
+        oscillator.stop(beat.at + 0.45);
+    }
+    const rendered = await offline.startRendering();
+    const channels = [rendered.getChannelData(0), rendered.getChannelData(1)];
+    const bytesPerSample = 2;
+    const header = 44;
+    const buffer = new ArrayBuffer(header + channels[0].length * channels.length * bytesPerSample);
+    const view = new DataView(buffer);
+    const text = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+    text(0, 'RIFF');
+    view.setUint32(4, buffer.byteLength - 8, true);
+    text(8, 'WAVE');
+    text(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels.length, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * channels.length * bytesPerSample, true);
+    view.setUint16(32, channels.length * bytesPerSample, true);
+    view.setUint16(34, 16, true);
+    text(36, 'data');
+    view.setUint32(40, buffer.byteLength - header, true);
+    for (let sample = 0; sample < channels[0].length; sample++) {
+        for (let channel = 0; channel < channels.length; channel++) {
+            const clamped = Math.max(-1, Math.min(1, channels[channel][sample]));
+            view.setInt16(header + (sample * channels.length + channel) * bytesPerSample, clamped * 0x7fff, true);
+        }
+    }
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+    return btoa(binary);
+}
+
+window.__film = { duration: film.duration, fps: film.fps, width: film.width, height: film.height, ready: Promise.resolve(), frame, exportWav };
+</script>
+</body>
+</html>

@@ -7,6 +7,8 @@ import { performance } from 'node:perf_hooks';
 import { appError } from '../errors.js';
 import { validateSpec } from './schema.js';
 import { safeProjectFile, HYPERFRAMES_VERSION } from './project.js';
+import { FILM_ENGINE } from '../film/constants.js';
+import { FILM_RENDERER, assertTrustedFilmRuntime, filmCheckArgs, filmRenderArgs } from '../film/trusted.js';
 import { hashFile } from './evaluate.js';
 import { precheckComposition } from '../precheck.js';
 
@@ -30,7 +32,7 @@ export function rendererEnvironment(workspace, env = process.env) {
         .split(path.delimiter).filter(value => path.isAbsolute(value) && !inside(workspace, path.resolve(value)));
     const result = { PATH: [...new Set([path.dirname(process.execPath), ...allowedPath])].join(path.delimiter),
         LANG: 'en_US.UTF-8', CI: '1', NO_COLOR: '1', DO_NOT_TRACK: '1', HYPERFRAMES_NO_TELEMETRY: '1' };
-    for (const key of ['TMPDIR', 'TMP', 'TEMP', 'HYPERFRAMES_BROWSER_PATH']) {
+    for (const key of ['TMPDIR', 'TMP', 'TEMP', 'HYPERFRAMES_BROWSER_PATH', 'FILM_CHROME']) {
         if (typeof env[key] === 'string' && path.isAbsolute(env[key]) && !inside(workspace, path.resolve(env[key]))) result[key] = env[key];
     }
     if (process.platform === 'win32' && typeof env.SystemRoot === 'string') result.SystemRoot = env.SystemRoot;
@@ -44,7 +46,8 @@ export function runFixedCommand(executable, args, { cwd, env, signal, timeoutMs,
         // Keep the tail of long logs; callers that parse stdout raise the limit.
         const append = (current, chunk) => (current + chunk.toString('utf8')).slice(-maxOutputBytes);
         const killGroup = name => {
-            if (!child?.pid) return;
+            // kill(-1) signals every process of the user; never let a bad pid reach it.
+            if (!Number.isSafeInteger(child?.pid) || child.pid <= 1) return;
             try { if (process.platform !== 'win32') process.kill(-child.pid, name); else child.kill(name); }
             catch (error) { if (error.code !== 'ESRCH') { try { child.kill(name); } catch { /* already gone */ } } }
         };
@@ -97,10 +100,13 @@ export async function renderProject(config, { workspace, spec: rawSpec, timeoutM
     if (JSON.stringify(validateSpec({ ...spec, acceptance }).acceptance) !== JSON.stringify(spec.acceptance)) throw appError('REPRO_INVALID', '工程验收要求与冻结规格不一致。');
     const { data: pkg } = await jsonFile(workspace, 'package.json');
     const { data: lock } = await jsonFile(workspace, 'package-lock.json');
-    const trustedPackage = JSON.parse(await fs.readFile(TRUSTED_PACKAGE, 'utf8'));
-    if (pkg.dependencies?.hyperframes !== HYPERFRAMES_VERSION || lock.packages?.['']?.dependencies?.hyperframes !== HYPERFRAMES_VERSION
-        || lock.packages?.['node_modules/hyperframes']?.version !== HYPERFRAMES_VERSION || lock.lockfileVersion !== 3 || trustedPackage.version !== HYPERFRAMES_VERSION) {
-        throw appError('REPRO_RENDER_VERSION', `本地渲染提供方与项目锁文件必须统一为 HyperFrames ${HYPERFRAMES_VERSION}。`);
+    const film = manifest.engine === FILM_ENGINE;
+    if (!film) {
+        const trustedPackage = JSON.parse(await fs.readFile(TRUSTED_PACKAGE, 'utf8'));
+        if (pkg.dependencies?.hyperframes !== HYPERFRAMES_VERSION || lock.packages?.['']?.dependencies?.hyperframes !== HYPERFRAMES_VERSION
+            || lock.packages?.['node_modules/hyperframes']?.version !== HYPERFRAMES_VERSION || lock.lockfileVersion !== 3 || trustedPackage.version !== HYPERFRAMES_VERSION) {
+            throw appError('REPRO_RENDER_VERSION', `本地渲染提供方与项目锁文件必须统一为 HyperFrames ${HYPERFRAMES_VERSION}。`);
+        }
     }
     // HyperFrames loads cwd/.env before parsing its command. Refuse it instead
     // of letting a project inject NODE_OPTIONS, browser overrides or secrets.
@@ -114,18 +120,32 @@ export async function renderProject(config, { workspace, spec: rawSpec, timeoutM
     const extension = path.extname(output).toLowerCase();
     if (!['.mp4', '.webm', '.mov'].includes(extension)) throw appError('REPRO_INVALID', '本地渲染提供方支持 mp4、webm、mov 视频。');
     const temporary = path.join(path.dirname(output), `.repro-render-${randomUUID()}${extension}`);
-    const frozen = { entrySha256: (await hashFile(entry)).sha256, inputsSha256: (await hashFile(inputFile)).sha256, cliSha256: (await hashFile(TRUSTED_CLI)).sha256 };
-    const args = [TRUSTED_CLI, 'render', workspace, '--composition', manifest.entry, '--output', temporary, '--format', extension.slice(1), '--variables-file', inputFile, '--quality', 'looks', '--strict'];
+    // A film project is rendered by the host's runtime, not the copy inside the project.
+    const filmRuntime = film ? await assertTrustedFilmRuntime(workspace, message => appError('REPRO_RENDER_VERSION', message)) : null;
+    const rendererFile = film ? FILM_RENDERER : TRUSTED_CLI;
+    const frozen = { entrySha256: (await hashFile(entry)).sha256, inputsSha256: (await hashFile(inputFile)).sha256, cliSha256: (await hashFile(rendererFile)).sha256 };
+    const args = film
+        ? filmRenderArgs(workspace, { entry: manifest.entry, out: temporary })
+        : [TRUSTED_CLI, 'render', workspace, '--composition', manifest.entry, '--output', temporary, '--format', extension.slice(1), '--variables-file', inputFile, '--quality', 'looks', '--strict'];
     const started = performance.now();
-    const record = { provider: 'local-hyperframes', version: HYPERFRAMES_VERSION, status: 'running', entry: manifest.entry,
+    const record = { provider: film ? 'local-film' : 'local-hyperframes', version: film ? filmRuntime.version : HYPERFRAMES_VERSION, status: 'running', entry: manifest.entry,
         output: manifest.output, ...frozen, commandHash: digest(JSON.stringify([process.execPath, ...args])),
+        ...(film ? { runtime: filmRuntime } : {}),
         preparation: 'agent-materialized-project', startedAt: new Date().toISOString(), renderCalls: 0 };
     try {
-        const checked = await precheckComposition({
-            dir: path.dirname(entry), entry: path.basename(entry), projectRoot: workspace, timeoutMs, signal,
-            env: { ...process.env, ...config.env }, cancelCode: 'REPRO_RENDER_CANCELLED', timeoutCode: 'REPRO_RENDER_TIMEOUT',
-        }, deps);
-        record.precheck = { status: checked.hyperframesCheck, warnings: checked.warnings.length, fps: checked.fps };
+        if (film) {
+            const checked = await runFixedCommand(process.execPath, filmCheckArgs(workspace), { cwd: workspace, env: rendererEnvironment(workspace, { ...process.env, ...config.env }),
+                signal, timeoutMs: Math.min(timeoutMs, 120_000) }, deps);
+            if (checked.termination) throw appError(checked.termination === 'cancelled' ? 'REPRO_RENDER_CANCELLED' : 'REPRO_RENDER_TIMEOUT', checked.termination === 'cancelled' ? '渲染已取消。' : '渲染超过时间预算。');
+            if (checked.exitCode !== 0) throw appError('REPRO_PRECHECK_FAILED', `film 静态检查未通过：${`${checked.stderr || checked.stdout || ''}`.trim().slice(-800)}`);
+            record.precheck = { status: 'film-check-passed', warnings: 0 };
+        } else {
+            const checked = await precheckComposition({
+                dir: path.dirname(entry), entry: path.basename(entry), projectRoot: workspace, timeoutMs, signal,
+                env: { ...process.env, ...config.env }, cancelCode: 'REPRO_RENDER_CANCELLED', timeoutCode: 'REPRO_RENDER_TIMEOUT',
+            }, deps);
+            record.precheck = { status: checked.hyperframesCheck, warnings: checked.warnings.length, fps: checked.fps };
+        }
         const remainingMs = Math.floor(timeoutMs - (performance.now() - started));
         if (remainingMs < 1) throw appError('REPRO_RENDER_TIMEOUT', '渲染超过时间预算。');
         record.renderCalls = 1;
@@ -133,7 +153,7 @@ export async function renderProject(config, { workspace, spec: rawSpec, timeoutM
             signal, timeoutMs: remainingMs, onStart: deps.onStart }, deps);
         record.process = result;
         if (result.termination) throw appError(result.termination === 'cancelled' ? 'REPRO_RENDER_CANCELLED' : 'REPRO_RENDER_TIMEOUT', result.termination === 'cancelled' ? '渲染已取消。' : '渲染超过时间预算。');
-        if (result.exitCode !== 0) throw appError('REPRO_RENDER_FAILED', `固定 HyperFrames 渲染失败（退出码 ${result.exitCode}）。`);
+        if (result.exitCode !== 0) throw appError('REPRO_RENDER_FAILED', film ? `film 渲染失败（退出码 ${result.exitCode}）。` : `固定 HyperFrames 渲染失败（退出码 ${result.exitCode}）。`);
         if ((await hashFile(entry)).sha256 !== frozen.entrySha256 || (await hashFile(inputFile)).sha256 !== frozen.inputsSha256) throw appError('REPRO_INVALID', '入口或输入在渲染期间改变。');
         const info = await fs.lstat(temporary);
         if (!info.isFile() || info.isSymbolicLink() || info.size === 0) throw appError('REPRO_RENDER_FAILED', '渲染未生成新的非空视频。');

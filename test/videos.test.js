@@ -24,9 +24,12 @@ function fakeRunner({ checkReport } = {}) {
     const runCommand = async (executable, args, opts) => {
         calls.push({ executable, args, cwd: opts.cwd, env: opts.env });
         if (executable === 'npm' && ['ci', 'install'].includes(args[0])) {
-            await fs.writeFile(path.join(opts.cwd, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/hyperframes': { version: ROOT_PKG.dependencies.hyperframes } } }));
-            await fs.mkdir(path.join(opts.cwd, 'node_modules/hyperframes/bin'), { recursive: true });
-            await fs.writeFile(path.join(opts.cwd, 'node_modules/hyperframes/bin/hyperframes.mjs'), '');
+            const manifest = JSON.parse(await fs.readFile(path.join(opts.cwd, 'video.json'), 'utf8'));
+            if (manifest.engine !== 'film@1') {
+                await fs.writeFile(path.join(opts.cwd, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/hyperframes': { version: ROOT_PKG.dependencies.hyperframes } } }));
+                await fs.mkdir(path.join(opts.cwd, 'node_modules/hyperframes/bin'), { recursive: true });
+                await fs.writeFile(path.join(opts.cwd, 'node_modules/hyperframes/bin/hyperframes.mjs'), '');
+            }
         }
         if (executable === 'npm' && args.join(' ') === 'run render') {
             const manifest = JSON.parse(await fs.readFile(path.join(opts.cwd, 'video.json'), 'utf8'));
@@ -265,4 +268,25 @@ test('video:pack zips a template package without inputs, generated files or priv
     assert.equal(elsewhere.data.output, 'out/t.video');
     assert.equal(elsewhere.data.registered, false, 'only files under deliverables/<slug>/templates/ are listed');
     await assert.rejects(exec(['video:pack', 'demo', '--out', 'out/t.zip'], w.env, fake), { code: 'INVALID_INPUT' });
+});
+
+test('video:pack ships a film template without HyperFrames and refuses one that smuggles it in', async (t) => {
+    const w = await production(t);
+    const fake = fakeRunner();
+    await exec(['video:new', 'demo', '--engine', 'film', '--skip-install'], w.env, fake);
+    const pkg = path.join(w.prod, 'videos/code-v1');
+    const manifestFile = path.join(pkg, 'video.json');
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+    manifest.template = { format: 'video-template@1', inputs: {} };
+    await fs.writeFile(manifestFile, JSON.stringify(manifest));
+
+    const packed = await exec(['video:pack', 'demo', '--force', '--out', 'out/film.video'], w.env, fake);
+    assert.equal(packed.ok, true);
+    const names = (await import('../src/zip.js')).readZip(await fs.readFile(path.join(w.directory, 'out/film.video'))).map((entry) => entry.name);
+    assert.ok(names.some((name) => name.endsWith('/tools/render.mjs')));
+    assert.ok(names.some((name) => name.endsWith('/runtime/film.js')));
+    assert.equal(names.some((name) => name.includes('node_modules/hyperframes')), false);
+
+    await fs.writeFile(path.join(pkg, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/hyperframes': { version: '9.9.9' } } }));
+    await assert.rejects(exec(['video:pack', 'demo', '--force', '--out', 'out/film.video'], w.env, fake), (error) => error.code === 'VIDEO_INVALID' && /HyperFrames/.test(error.message));
 });

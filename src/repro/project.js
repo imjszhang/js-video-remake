@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { appError } from '../errors.js';
+import { FILM_ENGINE } from '../film/constants.js';
 import { validateRequirements } from './capabilities.js';
 import { skillScaffold, syncSkills, validateSkills, portableSkillSyncScript } from './skills.js';
 
@@ -77,9 +78,12 @@ async function validateDependencies(root) {
         }
     }
     if (pkg.workspaces) throw appError('REPRO_INVALID', '独立模板不接受 workspace 依赖');
-    if (pkg.dependencies?.hyperframes !== HYPERFRAMES_VERSION) throw appError('REPRO_INVALID', `HyperFrames 必须精确固定为 ${HYPERFRAMES_VERSION}`);
+    const film = await isFilmProject(root);
+    if (!film && pkg.dependencies?.hyperframes !== HYPERFRAMES_VERSION) throw appError('REPRO_INVALID', `HyperFrames 必须精确固定为 ${HYPERFRAMES_VERSION}`);
     const lock = JSON.parse(await fs.readFile(await safeProjectFile(root, 'package-lock.json'), 'utf8'));
-    if (lock.lockfileVersion !== 3 || lock.packages?.['']?.dependencies?.hyperframes !== HYPERFRAMES_VERSION
+    if (film) {
+        if (pkg.dependencies && Object.keys(pkg.dependencies).length) throw appError('REPRO_INVALID', 'film 工程不安装外部依赖。');
+    } else if (lock.lockfileVersion !== 3 || lock.packages?.['']?.dependencies?.hyperframes !== HYPERFRAMES_VERSION
         || lock.packages?.['node_modules/hyperframes']?.version !== HYPERFRAMES_VERSION) throw appError('REPRO_INVALID', '依赖锁与项目版本不一致');
     for (const [key, value] of Object.entries(lock.packages)) {
         if (key) projectPath(key);
@@ -164,10 +168,14 @@ function command(binary, args) {
 const doctorScript = `${scriptCommon}
 const issues = [];
 if (Number(process.versions.node.split('.')[0]) < 22) issues.push('Node.js 22.15+ is required');
-try {
-  const installed = await read('node_modules/hyperframes/package.json');
-  if (installed.version !== '${HYPERFRAMES_VERSION}') issues.push('Run npm ci to install HyperFrames ${HYPERFRAMES_VERSION}');
-} catch { issues.push('Run npm ci to install local dependencies'); }
+if (manifest.engine === '${FILM_ENGINE}') {
+  try { await fs.access(local('tools/render.mjs')); } catch { issues.push('Missing film renderer'); }
+} else {
+  try {
+    const installed = await read('node_modules/hyperframes/package.json');
+    if (installed.version !== '${HYPERFRAMES_VERSION}') issues.push('Run npm ci to install HyperFrames ${HYPERFRAMES_VERSION}');
+  } catch { issues.push('Run npm ci to install local dependencies'); }
+}
 for (const tool of ['ffmpeg', 'ffprobe']) {
   const result = spawnSync(tool, ['-version'], { encoding: 'utf8' });
   if (result.error || result.status !== 0) issues.push(tool + ' must be installed and on PATH');
@@ -181,14 +189,15 @@ const renderScript = `${scriptCommon}
 if (manifest.status === 'draft') throw new Error('Draft scaffold: implement src/ and set reproduction.json status to ready before rendering.');
 const output = local(acceptance.media.file);
 await fs.mkdir(path.dirname(output), { recursive: true });
-const cli = local('node_modules/hyperframes/bin/hyperframes.mjs');
+const film = manifest.engine === '${FILM_ENGINE}';
+const cli = local(film ? 'tools/render.mjs' : 'node_modules/hyperframes/bin/hyperframes.mjs');
 await fs.access(cli);
 const extra = process.argv.slice(2);
-if (extra.includes('--plan')) {
-  console.log(JSON.stringify({ executable: process.execPath, args: [cli, 'render', root, '--composition', manifest.entry, '--variables-file', local(manifest.inputsFile), '--output', output], cwd: root }, null, 2));
-} else {
-  command(process.execPath, [cli, 'render', root, '--composition', manifest.entry, '--variables-file', local(manifest.inputsFile), '--output', output, ...extra]);
-}
+const args = film
+  ? [cli, '--entry', manifest.entry, '--out', output, ...extra.filter(flag => flag !== '--plan')]
+  : [cli, 'render', root, '--composition', manifest.entry, '--variables-file', local(manifest.inputsFile), '--output', output, ...extra.filter(flag => flag !== '--plan')];
+if (extra.includes('--plan')) console.log(JSON.stringify({ executable: process.execPath, args, cwd: root }, null, 2));
+else command(process.execPath, args);
 `;
 
 const checkScript = `${scriptCommon}
@@ -228,7 +237,14 @@ console.log(JSON.stringify(report, null, 2));
 if (!report.ok) process.exitCode = 1;
 `;
 
-export async function scaffoldProject(root, { spec, inputs = {}, name = 'reproduction', capabilities = [], toolkit = false } = {}) {
+async function isFilmProject(root) {
+    try {
+        const manifest = JSON.parse(await fs.readFile(path.join(root, 'reproduction.json'), 'utf8'));
+        return manifest.engine === FILM_ENGINE;
+    } catch { return false; }
+}
+
+export async function scaffoldProject(root, { spec, inputs = {}, name = 'reproduction', capabilities = [], toolkit = false, engine = 'hyperframes' } = {}) {
     if (!spec?.acceptance?.media || !spec.inputs) throw appError('REPRO_INVALID', '创建项目需要输入和媒体验收规格');
     projectPath(spec.acceptance.media.file);
     const packageName = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '') || 'reproduction';
@@ -236,6 +252,7 @@ export async function scaffoldProject(root, { spec, inputs = {}, name = 'reprodu
     if ((await fs.readdir(root)).length) throw appError('REPRO_EXISTS', `项目目录不是空目录: ${root}`);
     const manifest = {
         schema: PROJECT_SCHEMA, name: packageName, status: 'draft', entry: 'src/index.html',
+        ...(engine === 'film' ? { engine: FILM_ENGINE } : {}),
         inputsFile: 'inputs/values.json', output: spec.acceptance.media.file,
         commands: { doctor: 'npm run doctor', render: 'npm run render', check: 'npm run check' },
         capabilities: validateRequirements(capabilities), skills: { canonical: '.agents/skills', generated: ['.claude/skills'] },
@@ -249,9 +266,14 @@ export async function scaffoldProject(root, { spec, inputs = {}, name = 'reprodu
         'README.md': `# ${spec.title || packageName}\n\nA standalone reproduction project. This initial scaffold is a draft; the composition must be implemented before it can render.\n\nInstall Node.js 22.15+, FFmpeg/ffprobe, then run \`npm ci\` and \`npm run doctor\`. HyperFrames may require its browser installation on a new machine. Read task/brief.md, supply inputs/values.json, and run \`npm run render\` followed by \`npm run check\`. Open this directory in a supported Agent Harness; model credentials belong to that Harness, outside this project.\n\nThe .agents/skills directory is canonical; .claude/skills contains generated copies. After changing canonical skills, run \`npm run skills:sync\`. A template can be used without video-remake.\n\nSelf-checks do not certify visual fidelity. External validation records the tested model, Harness, inputs, output and evidence.\n`,
         'AGENTS.md': `# Reproduction project\n\nRead task/brief.md and reproduction.json. Use the reproduce skill for adaptation, validate for evidence and checks, and repair after a failure. The canonical instructions are in .agents/skills/.\n\nKeep source and assets portable. Read current inputs from inputs/values.json. Preserve task/acceptance.json. Implement draft source before setting reproduction.json status to ready. Use package.json commands; keep credentials and runtime logs outside the template.\n`,
         'CLAUDE.md': '@AGENTS.md\n',
-        'package.json': { name: packageName, version: '1.0.0', private: true, type: 'module', engines: { node: '>=22.15.0' },
-            scripts: { doctor: 'node scripts/doctor.mjs', render: 'node scripts/render.mjs', check: 'node scripts/check.mjs', 'skills:sync': 'node scripts/sync-skills.mjs' }, dependencies: { hyperframes: HYPERFRAMES_VERSION } },
-        'package-lock.json': await hyperframesLock(packageName),
+        'package.json': {
+            name: packageName, version: '1.0.0', private: true, type: 'module', engines: { node: '>=22.15.0' },
+            scripts: { doctor: 'node scripts/doctor.mjs', render: 'node scripts/render.mjs', check: 'node scripts/check.mjs', 'skills:sync': 'node scripts/sync-skills.mjs' },
+            ...(engine === 'film' ? {} : { dependencies: { hyperframes: HYPERFRAMES_VERSION } }),
+        },
+        'package-lock.json': engine === 'film'
+            ? { name: packageName, version: '1.0.0', lockfileVersion: 3, requires: true, packages: { '': { name: packageName, version: '1.0.0', engines: { node: '>=22.15.0' } } } }
+            : await hyperframesLock(packageName),
         '.gitignore': 'node_modules/\noutputs/\ninputs/*\n!inputs/.gitkeep\n.env\n.env.*\n!.env.example\n.reproduction-capabilities.local.json\n',
         '.env.example': '# Capability credentials are bound by the executing Harness.\n',
         'task/brief.md': `# ${spec.title || packageName}\n\n${spec.objective || ''}\n\n## Preserve\n\n${(spec.preserve || []).map(v => `- ${v}`).join('\n')}\n\n## Replace\n\n${(spec.replace || []).map(v => `- ${v}`).join('\n')}\n`,
@@ -273,6 +295,16 @@ export async function scaffoldProject(root, { spec, inputs = {}, name = 'reprodu
         'outputs/.gitkeep': '',
     };
     for (const [rel, value] of Object.entries(files)) await write(root, rel, value);
+    if (engine === 'film') {
+        const frame = { width: spec.acceptance.media.width, height: spec.acceptance.media.height, fps: 30, frames: Math.round(spec.acceptance.media.durationSec * 30) };
+        const staged = path.join(root, '.film-scaffold');
+        const film = await import('../film/engine.js');
+        await film.scaffoldFilmPackage(staged, { name: packageName, title: spec.title || packageName, frame, output: spec.acceptance.media.file, source: {} });
+        for (const relative of ['tools', 'runtime', 'vendor', 'film.json']) await fs.cp(path.join(staged, relative), path.join(root, relative), { recursive: true });
+        await fs.rm(staged, { recursive: true, force: true });
+        manifest.runtime = await film.runtimeManifest();
+        await fs.writeFile(path.join(root, 'reproduction.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    }
     for (const [skill, value] of Object.entries(skillScaffold())) await write(root, `.agents/skills/${skill}/SKILL.md`, value);
     if (toolkit) {
         const folder = new URL('../../resources/repro-toolkit/three-r186/', import.meta.url);

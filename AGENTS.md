@@ -25,7 +25,7 @@ node cli/remake.js media:doctor
 - 素材生成的 provider 在 `src/media/`，接入方法见 [docs/media-providers.md](docs/media-providers.md)。
 - 已导入草稿的代码视频包不再修改；要改就用 `video:fork` 开新版本。
 - 外部服务和子进程通过可注入的依赖（如 `deps.fetchImpl`、`deps.runFfmpeg`）调用，测试用模拟实现，不打真实服务。
-- 代码视频包（`productions/<slug>/videos/<名字>-vN/`）自带 `package.json` 和锁文件，锁定与根依赖相同的 HyperFrames 版本，不引用包外文件；本仓只通过 `src/videos.js` 驱动它。制作里不再有其他形式的 HyperFrames 工程；不要用 `npx hyperframes@...` 另装版本。
+- 代码视频包（`productions/<slug>/videos/<名字>-vN/`）自带 `package.json` 和锁文件，不引用包外文件；本仓只通过 `src/videos.js` 驱动它。默认引擎锁定与根依赖相同的 HyperFrames 版本，制作里不再有其他形式的 HyperFrames 工程，不要用 `npx hyperframes@...` 另装版本。`video:new --engine film` 的包改用 `resources/film-runtime/` 复制进去的渲染器，不装 HyperFrames，运行时文件的哈希写在包内 `film.json`。
 - 文档和面向用户的提示用中文；修改行为时同步更新 README 或 `docs/` 中对应段落。
 
 ## 版本管理与发布

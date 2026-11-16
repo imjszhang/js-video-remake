@@ -51,7 +51,7 @@ node cli/remake.js video:import my-video
 
 ## 代码视频包
 
-代码视频包是独立的 HyperFrames 工程，和本仓解耦：将完成的包复制到具备 Node.js、FFmpeg 和 HyperFrames 浏览器的环境，安装包内依赖后即可构建和渲染；有 `build` 脚本时先构建。约定如下：
+代码视频包是独立工程，和本仓解耦，有两种引擎。默认是 HyperFrames：包内锁定与根依赖相同的版本，复制到具备 Node.js、FFmpeg 和 HyperFrames 浏览器的环境，安装包内依赖后即可构建和渲染，有 `build` 脚本时先构建。`video:new --engine film` 改用 film 引擎：包内自带渲染器（`tools/`、`runtime/`），不依赖 HyperFrames，只需要 Node.js、FFmpeg 和一个本机 Chrome，画面必须是影片时间的纯函数。约定如下：
 
 - 位置是 `productions/<slug>/videos/<名字>-vN/`，名字以 `-vN` 结尾，例如 `code-v1`。
 - 包内有 `package.json`、`package-lock.json`（锁定 HyperFrames）、`video.json`（画幅、帧数、入口、输出、来源）、入口 HTML、`assets/`。`npm run check` 和 `npm run render` 调用包内依赖，渲染输出写到包内的 `renders/`。
@@ -61,7 +61,7 @@ node cli/remake.js video:import my-video
 
 | 命令 | 作用 |
 | --- | --- |
-| `video:new <slug> [--as 名字]` | 生成新包并运行 `npm install`；名字默认 `code-vN` |
+| `video:new <slug> [--as 名字] [--engine film]` | 生成新包并运行 `npm install`；名字默认 `code-vN`。`--engine film` 使用自带渲染器，不装 HyperFrames |
 | `video:fork <slug> [--video 来源 --as 名字]` | 复制成下一个版本（不含 `node_modules`、`renders/` 和缓存），在 `video.json` 记下来源版本和它的源文件哈希，再运行 `npm ci` |
 | `video:render <slug>` | 有 `build` 脚本时先运行它，再运行 `npm run render`；在 `drafts/.renders/` 记下这次渲染对应的源文件哈希 |
 | `video:import <slug>` | 把渲染结果复制到 `drafts/<名字>/`，写 `MANIFEST.json`（包名、源文件哈希、时长、帧数、SHA-256），并更新 `catalog.json` 的草稿指针，项目的「成片放映」随即可见 |

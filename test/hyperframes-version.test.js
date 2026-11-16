@@ -32,6 +32,14 @@ test('every HyperFrames project is a self-contained code video package or reprod
             throw error;
         });
         if (videoPackage?.schema === 'video-package@1') {
+            // A film package pins the film runtime it copied in, not HyperFrames.
+            if (videoPackage.engine === 'film@1') {
+                assert.equal(project.dependencies?.hyperframes, undefined, `${file}: a film package does not depend on HyperFrames`);
+                for (const [name, command] of Object.entries(project.scripts || {})) {
+                    assert.doesNotMatch(command, /hyperframes|\.\.\/|cli\/hyperframes\.js/, `${file} ${name}: a film package stays self-contained`);
+                }
+                continue;
+            }
             assert.equal(project.dependencies?.hyperframes, version, `${file}: video packages pin the shared exact version`);
             const ownLock = JSON.parse(await fs.readFile(path.join(path.dirname(file), 'package-lock.json'), 'utf8'));
             assert.equal(ownLock.packages['node_modules/hyperframes'].version, version, `${file}: video package lock`);

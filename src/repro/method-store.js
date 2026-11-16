@@ -321,7 +321,7 @@ export async function instantiateMethodRecipe(config, selector, destination, { s
     const packs = await Promise.all((assetPacks || recipe.manifest.assetPacks).map(id => loadAssetPack(config, id)));
     if (hash(packs.map(p => p.id)) !== hash(recipe.manifest.assetPacks)) throw invalid('执行素材包必须与配方冻结声明一致');
     if (hash(packs.map(pack => ({ id: pack.id, treeHash: pack.treeHash, metadataHash: pack.metadataHash }))) !== hash(recipe.assetPacks)) throw appError('REPRO_CHANGED', '素材包已偏离方法配方冻结时的版本内容');
-    await scaffoldProject(destination, { spec, name, inputs, capabilities: recipe.manifest.capabilities, toolkit: true });
+    await scaffoldProject(destination, { spec, name, inputs, capabilities: recipe.manifest.capabilities, toolkit: true, engine: spec.engine === 'film' ? 'film' : 'hyperframes' });
     await installGenerationInstructions(destination);
     const scaffold = await snapshotProject(destination, { includeInputs: true });
     const scaffoldHash = await scaffoldFingerprint(destination, scaffold);
@@ -400,7 +400,16 @@ export async function inspectMethodMigration(config, selector) {
         next: 'Create a new method directory and explicitly reviewed asset packs; the source template remains immutable.' };
 }
 
-export async function scaffoldMethodRecipe(directory, { title = 'Method recipe', scope = 'same-reference', assetPacks = [], capabilities = [], contentReview } = {}) {
+// Method prose for the film engine. It teaches the frame contract and the review loop;
+// it carries no scene, layout or camera track for any particular reference.
+const FILM_METHOD_DOCS = {
+    'methods/workflow.md': '# Production method (film engine)\n\nThe project renders with the film engine: src/index.html draws every frame from film time t alone, and tools/render.mjs captures it in a local Chrome. Work in this order.\n\n1. Observe the reference. List shots with start and end times, the dominant motion in each, and the moments where something lands (a cut, a hit, a title).\n2. Write the timeline first. Put every landing moment into film.json as a named beat (`{ "name": "title-in", "at": 2.4 }`). Keep duration a whole number of frames at the declared fps.\n3. Build the page in src/index.html. Import the runtime with `import { loadFilm, loadInputs, installFilm, beatAt, mulberry32 } from "../runtime/film.js"` (runtime/ sits at the project root). loadFilm() and loadInputs() find film.json and inputs/values.json on their own. Compute everything for a frame inside frame(t), and publish it with installFilm(). Derive motion from beats (`beatAt(film, "title-in").at`) instead of literal times, so retiming means editing film.json only.\n4. Check determinism with `node tools/check.mjs`. It rejects clocks, animation loops and unseeded randomness.\n5. Render stills at the beat times with `node tools/render.mjs --entry src/index.html --frames <list> --png-dir outputs/stills`, compare them with reference frames at the same times, then render the whole film.\n',
+    'methods/film-contract.md': '# Film frame contract\n\n- `window.__film = { duration, fps, width, height, ready, frame(t) }`, installed by installFilm() from runtime/film.js.\n- frame(t) must be a pure function of t: the same t gives the same pixels on every call and every machine. The renderer may call frames out of order and more than once.\n- Allowed: math on t, mulberry32(seed) for randomness, precomputed tables built before `ready` resolves, reading inputs/values.json through loadInputs().\n- runtime/, tools/ and vendor/ must stay byte-identical: the workbench renders with its own copy of the runtime and refuses a project whose runtime/ differs.\n- Forbidden: Date.now, performance.now, new Date, requestAnimationFrame, setInterval, Math.random, network fetches other than local package files.\n- Audio is optional. To ship audio, provide exportWav() returning base64 WAV of exactly `duration` seconds, built with runtime/wav.js.\n- Canvas size must equal film.json width and height; the renderer refuses a mismatch.\n',
+    'repair-playbooks/diagnosis.md': '# Diagnosis (film engine)\n\nRender the failing interval as stills with tools/render.mjs --frames and compare them with reference frames at the same times. Decide first whether the cause is timing (a beat at the wrong time: fix film.json), layout (wrong scale or placement: fix the drawing code), or motion (wrong easing or path between beats: fix the interpolation). Change one cause, re-render the whole affected interval including intermediate frames, and run tools/check.mjs again before a full render.\n',
+};
+
+export async function scaffoldMethodRecipe(directory, { title = 'Method recipe', scope = 'same-reference', assetPacks = [], capabilities = [], contentReview, engine = 'hyperframes' } = {}) {
+    if (!['hyperframes', 'film'].includes(engine)) throw invalid('方法配方 engine 必须为 hyperframes 或 film');
     await fs.mkdir(directory, { recursive: true });
     if ((await fs.readdir(directory)).length) throw appError('REPRO_EXISTS', '方法提炼输出目录必须为空');
     const docs = {
@@ -412,6 +421,7 @@ export async function scaffoldMethodRecipe(directory, { title = 'Method recipe',
         'constraints/visual.md': '# Observable constraints\n\nDescribe screen-space proportions, visibility, timing stages and visual relationships. Task-specific measured targets belong to the task. Do not provide solved world-coordinate layouts or executable camera tracks.\n',
         'repair-playbooks/diagnosis.md': '# Diagnosis\n\nMeasure the failing visual relationship in reference and candidate frames. Identify whether object scale, placement, projection or camera motion causes the discrepancy. Change one cause, sample the entire affected movement interval, and check that the repair does not introduce occlusion elsewhere.\n',
     };
+    if (engine === 'film') Object.assign(docs, FILM_METHOD_DOCS);
     for (const [file, body] of Object.entries(docs)) await fs.writeFile(await safeProjectFile(directory, file, { create: true }), body, { flag: 'wx' });
     const manifest = { schema: METHOD_SCHEMA, title, scope, files: Object.keys(docs), capabilities, assetPacks,
         generationContract: { requiredGeneratedFiles: ['src/index.html'], forbidden: ['teacher-implementation', 'reference-pixels'] },

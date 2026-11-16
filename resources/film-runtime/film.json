@@ -1,0 +1,11 @@
+{
+  "duration": 3,
+  "fps": 30,
+  "width": 640,
+  "height": 360,
+  "beats": [
+    { "name": "one", "at": 0.5 },
+    { "name": "two", "at": 1.5 },
+    { "name": "three", "at": 2.5 }
+  ]
+}

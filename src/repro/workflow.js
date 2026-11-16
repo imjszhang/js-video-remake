@@ -136,7 +136,7 @@ async function init(config, slug, options) {
     const workspace = await safeFile(config.workspace, `${item.dir}/project`, { missing: true });
     const inputs = workflow.execution || options.inputs || options.inputValues ? await resolveInputs(config, spec, options.inputs, options.inputValues) : null;
     const capabilityRequirements = validateRequirements(options.capabilities ? await readJson(config.workspace, options.capabilities) : []);
-    await scaffoldProject(workspace, { spec, name: slug, capabilities: capabilityRequirements });
+    await scaffoldProject(workspace, { spec, name: slug, capabilities: capabilityRequirements, engine: spec.engine === 'film' ? 'film' : 'hyperframes' });
     const state = { schema: 'video-remake.reproduction-run@2', id: `r_${randomUUID()}`, production: slug,
         kind: options.baseline ? 'baseline' : 'teacher', status: 'prepared', spec, specHash: jsonHash(spec), references,
         workspace, workflow, workflowHash: jsonHash(workflow), agentConfig: options.agentConfig, capabilityRequirements,
@@ -212,7 +212,7 @@ async function newAttempt(config, state) {
                 assembled = await instantiateMethodRecipe(config, state.method.id, next, { spec: state.spec, name: state.production, applyMethod: state.methodApplied !== false });
                 if (assembled.scaffoldHash !== state.scaffoldHash) throw appError('REPRO_CHANGED', '空工程工具版本已改变；请创建新的实验。');
             } else if (state.template) await copyProject(templateRoot(await loadTemplate(config, state.template.id)), next);
-            else await scaffoldProject(next, { spec: state.spec, name: state.production, capabilities: state.capabilityRequirements || [] });
+            else await scaffoldProject(next, { spec: state.spec, name: state.production, capabilities: state.capabilityRequirements || [], engine: state.spec.engine === 'film' ? 'film' : 'hyperframes' });
             await fs.mkdir(path.dirname(history), { recursive: true });
             await fs.rename(state.workspace, history);
             try { await fs.rename(next, state.workspace); }
@@ -223,7 +223,7 @@ async function newAttempt(config, state) {
     const frozenInputs = await installInputs(config, state);
     const attempt = { number: state.attempts.length + 1, startedAt: now(), frozenInputs, agents: [], executionCompleted: false };
     if (state.method && !state.continuation) {
-        const lockedPaths = [...new Set([...Object.keys(state.methodAssembly?.lockedFiles || {}), ...Object.keys(frozenInputs), 'method', '.agents', '.claude', 'task', 'inputs', 'reference', 'toolkit', 'assets/packs', 'scripts'])];
+        const lockedPaths = [...new Set([...Object.keys(state.methodAssembly?.lockedFiles || {}), ...Object.keys(frozenInputs), 'method', '.agents', '.claude', 'task', 'inputs', 'reference', 'toolkit', 'assets/packs', 'scripts', ...(state.spec.engine === 'film' ? ['runtime', 'tools', 'vendor'] : [])])];
         state.generation = await captureGenerationBaseline(state.workspace, {
             identity: { method: state.method, methodApplied: state.methodApplied !== false, scaffoldHash: state.scaffoldHash, assetLockHash: state.methodAssembly.assetLockHash, toolProfileHash: state.toolProfileHash, specHash: state.specHash, inputsHash: state.inputsHash },
             lockedPaths, isolation: state.executionIsolation || { level: 'context-only', readIsolation: 'unverified', limitations: ['The native Harness does not enforce read isolation.'] },
@@ -287,13 +287,14 @@ function agentInstruction(state, { resume = false, repair = false } = {}) {
     return [
         state.method ? '从当前空工程独立生成所有场景、构图、镜头与动画。方法目录提供制作方法而不是成品代码；不得读取其他项目、教师实现或历史试跑。先分析参考，再自行编写分镜和可编辑场景。' : state.kind === 'teacher' ? '完成 task/spec.json 描述的对标视频复刻，并留下完整可编辑的工程。先观察参考，记录分析和时间线，再实现和渲染。' : '使用本项目的源码、工作流和 Skill 完成输入内容的新一轮复刻。',
         '从 AGENTS.md 和 .agents/skills/reproduce/SKILL.md 进入。输入位于 inputs/values.json；对标绑定在 reference/SOURCES.json。',
-        resume || repair ? '这是已有工程的续跑或修复。先读 RENDER.md、ANALYSIS.md 和 TIMELINE.md，只完成剩余工作；复用已安装的锁定依赖和有效检查，不重新做完整参考分析。' : '运行 npm ci、npm run doctor；按项目流程制作。保留锁定版本，不运行 latest 或升级依赖。',
+        resume || repair ? '这是已有工程的续跑或修复。先读 RENDER.md、ANALYSIS.md 和 TIMELINE.md，只完成剩余工作；复用已安装的锁定依赖和有效检查，不重新做完整参考分析。' : (state.spec.engine === 'film' ? '运行 npm run doctor；按项目流程制作。本工程使用 film 引擎：src/index.html 用 runtime/film.js 的 loadFilm()、installFilm() 发布 window.__film，frame(t) 只依赖 t，节拍写在 film.json；规则见 method/methods/film-contract.md（若有）和 README。用 node tools/check.mjs 自查，用 node tools/render.mjs --entry src/index.html --frames … --png-dir outputs/stills 抽帧对照。' : '运行 npm ci、npm run doctor；按项目流程制作。保留锁定版本，不运行 latest 或升级依赖。'),
         (state.workflow.policy.renderProvider || 'local') === 'local' ? '本次只需完成可渲染源码与必要预处理，然后正常结束调用。最终浏览器渲染和媒体检查由工作台执行；已记录浏览器受限时不要重复 npm run render，不因缺少新成片而继续循环。' : '运行 npm run render 与 npm run check。',
         (state.workflow.policy.renderProvider || 'local') === 'local' ? '工作台会在你完成源码后通过独立本地渲染服务生成最终媒体。若原生环境禁止浏览器或本地端口，不要绕过；完成素材和输入预处理后报告该限制，工作台仅执行固定 HyperFrames 渲染命令，不运行你的准备脚本。' : '',
+        state.spec.engine === 'film' ? 'film 工程由工作台用本机的 film 运行时渲染：runtime/ 与 tools/ 必须与原样一致，改动会被拒绝渲染。页面只能请求工程内文件，外部网络请求会被拦截并导致渲染失败。' : '',
         '只在当前项目和临时目录生成文件；不要安装或升级系统软件、修改全局配置或读取凭据。缺少系统工具应报告阻塞。',
         `最终成片路径: ${state.spec.acceptance.media.file}。必需源码/记录: ${JSON.stringify(state.spec.acceptance.requiredFiles)}。`,
         state.method ? '只允许复用 ASSET-LOCK.json 中的通用素材和 toolkit/ 中的通用运行库。场景装配、坐标、时间轴及相机路径必须由你生成。reference/ 和 overview 仅供观察，不得成为渲染图片、纹理或视频。不调用其他模型或子代理。' : '允许复用旧工程源码和声明素材。本次为工程回放，不作为独立生成证明。不得复制原片或教师完整成片作为输出。',
-        '不要修改方法、技能、toolkit/、通用素材、package.json、锁文件、scripts/、task/、inputs/、reference/。自检结果仅帮助修复，外部评审决定是否通过。',
+        '不要修改方法、技能、toolkit/、通用素材、package.json、锁文件、scripts/、task/、inputs/、reference/'+(state.spec.engine === 'film' ? '、runtime/、tools/、vendor/' : '')+'。自检结果仅帮助修复，外部评审决定是否通过。',
         '完成 src/ 实现后，在 reproduction.json 中将 status 设为 ready，并移除源码中的草稿标记；如无法完成，明确报告原因，不伪造产物或检查。',
         state.feedback ? '当前外部失败反馈优先于旧交接记录中的“已修复”或“只需检查”。逐项核对尚未通过的标准，针对实际差异修改实现；不要仅重跑静态检查后交接。只在当前源码和证据已证明某项问题消失时保留现状，并记录依据；未解决项如实列出。' : '',
         state.feedback ? `前次失败反馈（用于改进，不能更改验收标准）: ${JSON.stringify(state.feedback)}` : '',

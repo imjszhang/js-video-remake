@@ -237,7 +237,9 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
     }
     if (data?.command === 'check') {
         write(`检查通过: ${data.slug}${data.video ? ` / ${data.video}` : ''}`);
-        write(`帧率: ${data.fps}`);
+        if (data.engine) write(`引擎: ${data.engine}`);
+        if (data.fps !== undefined && data.fps !== null) write(`帧率: ${data.fps}`);
+        if (data.determinism?.frames) write(`确定性抽帧: ${data.determinism.frames.map((item) => item.frame).join(', ')}，${data.determinism.ok ? '单独渲染与顺序渲染一致' : '不一致'}`);
         if (data.warnings?.length) write(`警告: ${data.warnings.length}`);
         return;
     }
@@ -318,7 +320,8 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
     }
     if (data?.command === 'video:new' || data?.command === 'video:fork') {
         write(data.command === 'video:fork' ? `已复制 ${data.from} → ${data.video}: ${data.dir}` : `已创建代码视频包: ${data.dir}`);
-        write(data.installed ? `依赖: 已运行 npm ${data.installed}` : `依赖: 未安装，运行 cd ${data.dir} && npm install`);
+        if (data.engine) write(`引擎: ${data.engine}`);
+        write(data.engine === 'film@1' ? '依赖: 无。渲染需要本机 Chrome 和 FFmpeg。' : data.installed ? `依赖: 已运行 npm ${data.installed}` : `依赖: 未安装，运行 cd ${data.dir} && npm install`);
         return;
     }
     if (data?.command === 'video:list') {
@@ -326,7 +329,7 @@ export function printHuman(result, write = (line) => process.stdout.write(`${lin
         for (const video of data.videos) {
             const state = [video.installed ? '已安装' : '未安装', video.rendered ? '已渲染' : '未渲染', video.imported ? '已导入（冻结）' : '未导入'].join('，');
             const label = video.lineage ? `${video.lineage.title} · ${video.lineage.kind === 'source' ? '原版 ' : ''}v${video.lineage.version}` : `${video.name} v${video.version ?? '?'}`;
-            const role = video.template ? '模板' : '复刻工程';
+            const role = video.template ? '模板' : video.engine === 'film@1' ? '复刻工程（film）' : '复刻工程';
             write(`${label}  [${video.name}]  ${role}${video.lineage?.origin ? `  ← ${video.lineage.origin.title} v${video.lineage.origin.version}` : ''}  ${state}`);
         }
         return;

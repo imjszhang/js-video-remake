@@ -4,6 +4,7 @@
 
 ## 未发布
 
+- 新增 film 视频引擎。`video:new --engine film` 建立的代码视频包自带渲染器，不依赖 HyperFrames，只需要 Node.js、FFmpeg 和一个本机 Chrome；每一帧必须是影片时间的纯函数，`video:check` 会拒绝时钟、定时器和无种子随机数。`video:render`、`video:studio`、`timeline` 和 `video:pack` 按包内 `video.json` 的 `engine` 分发，film 包可以打成 `.video` 模板。复刻规格的 `engine` 字段为 `film` 时，复刻工程同样用这套渲染器，渲染记录的 provider 为 `local-film`。托管渲染和阶段预览运行本机 `resources/film-runtime/` 里的检查器和渲染器，不运行工程自带的那份；工程的 `runtime/` 与本机不一致时拒绝渲染。渲染时页面发出的外部网络请求会被拦截并让渲染失败。`video:check` 与包内 `npm run check` 一致，含确定性抽帧。film 包暂不支持 `video:template` 和模板工作台的填写、合成，只能打包或复制。
 - 制作工作台的项目页增加 Agent 监视窗口。运行中会滚动显示最近的命令和说明。执行器、Provider 和模型分开选择。选中 Provider 后会自动读取该账号或服务的可选模型并放进下拉框，没有列出的仍可填写自定义模型 ID。「新开一轮」只按输入框里的话另做一轮；「接着上次改」留在同一次运行上，留空则从停下的地方继续。运行中也可以停止。
 - `agent:run --reference <参考 ID> --as <制作名>` 会在模型开始前建立并绑定制作，工作台立刻能看到这个项目。运行期间把状态、对标参考、任务摘要和已建立的代码视频包写进该制作。`agent:plan` 只预览，不创建目录。
 - 中止、到时限或失败后，用 `agent:run --continue RUN_ID` 从项目里已有文件接着做。结果已经在项目里时，加上 `--instruction` 按新要求继续优化，不另开项目。

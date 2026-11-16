@@ -6,6 +6,8 @@ import { performance } from 'node:perf_hooks';
 import { appError } from '../errors.js';
 import { validateSpec } from './schema.js';
 import { HYPERFRAMES_VERSION, safeProjectFile, snapshotProject } from './project.js';
+import { FILM_ENGINE } from '../film/constants.js';
+import { FILM_RENDERER, assertTrustedFilmRuntime, filmCheckArgs, filmRenderArgs } from '../film/trusted.js';
 import { precheckComposition, readDeclaredFps } from '../precheck.js';
 import { runFixedCommand } from './render.js';
 import { hashFile } from './evaluate.js';
@@ -33,10 +35,13 @@ async function previewProject(workspace, spec) {
     if (JSON.stringify(validateSpec({ ...spec, acceptance }).acceptance) !== JSON.stringify(spec.acceptance)) throw invalid('阶段预览不得改变最终验收规格。');
     const { value: pkg } = await jsonFile(workspace, 'package.json');
     const { value: lock } = await jsonFile(workspace, 'package-lock.json');
-    const installed = JSON.parse(await fs.readFile(TRUSTED_PACKAGE, 'utf8'));
-    if (pkg.dependencies?.hyperframes !== HYPERFRAMES_VERSION || lock.lockfileVersion !== 3
-        || lock.packages?.['']?.dependencies?.hyperframes !== HYPERFRAMES_VERSION
-        || lock.packages?.['node_modules/hyperframes']?.version !== HYPERFRAMES_VERSION || installed.version !== HYPERFRAMES_VERSION) throw appError('REPRO_RENDER_VERSION', '阶段预览必须使用同一锁定 HyperFrames 版本。');
+    const film = manifest.engine === FILM_ENGINE;
+    if (!film) {
+        const installed = JSON.parse(await fs.readFile(TRUSTED_PACKAGE, 'utf8'));
+        if (pkg.dependencies?.hyperframes !== HYPERFRAMES_VERSION || lock.lockfileVersion !== 3
+            || lock.packages?.['']?.dependencies?.hyperframes !== HYPERFRAMES_VERSION
+            || lock.packages?.['node_modules/hyperframes']?.version !== HYPERFRAMES_VERSION || installed.version !== HYPERFRAMES_VERSION) throw appError('REPRO_RENDER_VERSION', '阶段预览必须使用同一锁定 HyperFrames 版本。');
+    }
     try { await fs.lstat(path.join(workspace, '.env')); throw invalid('阶段预览不得加载工程 .env。'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const entry = await safeProjectFile(workspace, manifest.entry);
@@ -44,7 +49,7 @@ async function previewProject(workspace, spec) {
     if ((await fs.readFile(entry, 'utf8')).includes('REPRODUCTION_DRAFT')) throw invalid('阶段预览入口仍为空白占位文件。');
     const { file: inputsFile, value: inputs } = await jsonFile(workspace, manifest.inputsFile);
     if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw invalid('阶段预览输入必须是对象。');
-    return { manifest, inputsFile, entry };
+    return { manifest, inputsFile, entry, film };
 }
 
 /**
@@ -60,7 +65,7 @@ export async function previewStage(config, { workspace, spec: rawSpec, reference
     if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw invalid('阶段预览工程必须是真实目录。');
     workspace = await fs.realpath(workspace);
     const spec = validateSpec(rawSpec || (await jsonFile(workspace, 'task/spec.json')).value);
-    const { manifest, inputsFile, entry } = await previewProject(workspace, spec);
+    const { manifest, inputsFile, entry, film } = await previewProject(workspace, spec);
     const before = await snapshotProject(workspace, { includeInputs: true });
     if (sourceSnapshot && before.treeHash !== sourceSnapshot.treeHash) throw invalid('执行者提交后源码已变化，不能生成阶段证据。');
     const scope = stageSamplingPlan(spec, { shots, shotIds });
@@ -71,7 +76,9 @@ export async function previewStage(config, { workspace, spec: rawSpec, reference
     await fs.mkdir(scratch);
     const env = { ...process.env, ...config?.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch };
     const context = stageCommandContext({ workspace, timeoutMs, signal, env, onStart: deps.onStart }, deps);
-    const record = { id: directory.id, stageId, status: 'running', provider: 'local-hyperframes', version: HYPERFRAMES_VERSION,
+    const filmRuntime = film ? await assertTrustedFilmRuntime(workspace, message => appError('REPRO_RENDER_VERSION', message)) : null;
+    const record = { id: directory.id, stageId, status: 'running', provider: film ? 'local-film' : 'local-hyperframes', version: film ? filmRuntime.version : HYPERFRAMES_VERSION,
+        ...(film ? { runtime: filmRuntime } : {}),
         strategy: 'full-render-and-sample', scope, sourceTreeHash: before.treeHash, inputsHash, assetLockHash, protocolHash,
         evidenceRoot: directory.root, startedAt: new Date().toISOString(), previewJobs: 0, renderCalls: 0,
         limitations: ['This draft preview renders the whole declared timeline before sampling; its full render time is charged.',
@@ -83,15 +90,30 @@ export async function previewStage(config, { workspace, spec: rawSpec, reference
         const windowEnd = Math.max(...scope.ranges.map((range) => range.endSec));
         context.remaining();
         const runCommand = deps.runCommand || runFixedCommand;
-        const checked = await precheckComposition({
-            dir: path.dirname(entry), entry: path.basename(entry), projectRoot: workspace, fps: readDeclaredFps(entryHtml) ?? 30,
-            range: `${windowStart},${windowEnd}`, timeoutMs: context.remaining(), signal, env,
-            cancelCode: 'REPRO_STAGE_CANCELLED', timeoutCode: 'REPRO_STAGE_TIMEOUT',
-        }, { ...deps, runCommand: (...args) => { context.hostToolCalls++; return runCommand(...args); } });
-        record.precheck = { status: checked.hyperframesCheck, warnings: checked.warnings.length };
-        const args = [TRUSTED_CLI, 'render', workspace, '--composition', manifest.entry, '--output', temporary,
-            '--format', 'mp4', '--variables-file', inputsFile, '--quality', 'draft', '--strict'];
-        record.cliSha256 = (await hashFile(TRUSTED_CLI)).sha256;
+        if (film) {
+            // HyperFrames check does not apply; the host film checker enforces the frame contract.
+            record.precheck = { status: 'film-check', warnings: 0 };
+            try { await context.run(process.execPath, filmCheckArgs(workspace)); }
+            catch (error) {
+                if (error.code !== 'REPRO_STAGE_MEDIA_FAILED') throw error;
+                const output = `${error.renderProcess?.stderr || error.renderProcess?.stdout || ''}`.trim().slice(-800);
+                throw invalid(`film 静态检查未通过：${output}`);
+            }
+            record.precheck.status = 'film-check-passed';
+        } else {
+            const checked = await precheckComposition({
+                dir: path.dirname(entry), entry: path.basename(entry), projectRoot: workspace, fps: readDeclaredFps(entryHtml) ?? 30,
+                range: `${windowStart},${windowEnd}`, timeoutMs: context.remaining(), signal, env,
+                cancelCode: 'REPRO_STAGE_CANCELLED', timeoutCode: 'REPRO_STAGE_TIMEOUT',
+            }, { ...deps, runCommand: (...args) => { context.hostToolCalls++; return runCommand(...args); } });
+            record.precheck = { status: checked.hyperframesCheck, warnings: checked.warnings.length };
+        }
+        const rendererFile = film ? FILM_RENDERER : TRUSTED_CLI;
+        const args = film
+            ? filmRenderArgs(workspace, { entry: manifest.entry, out: temporary })
+            : [TRUSTED_CLI, 'render', workspace, '--composition', manifest.entry, '--output', temporary,
+                '--format', 'mp4', '--variables-file', inputsFile, '--quality', 'draft', '--strict'];
+        record.cliSha256 = (await hashFile(rendererFile)).sha256;
         record.commandHash = digest(JSON.stringify([process.execPath, ...args]));
         context.remaining();
         record.previewJobs = 1; record.renderCalls = 1;

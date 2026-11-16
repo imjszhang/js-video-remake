@@ -258,6 +258,10 @@ export async function adoptVideo(config, { slug, name, title, as: asName, skipIn
     if (source.manifest.template?.format === TEMPLATE_FORMAT) {
         throw appError('VIDEO_INVALID', `videos/${source.name} 已经是模板。填写素材、预览和导出用模板工作台，或运行 video:pack。`);
     }
+    // The generated inputs/build/compose tools drive HyperFrames; a film package has none.
+    if (source.manifest.engine === 'film@1') {
+        throw appError('VIDEO_INVALID', 'film 引擎的包还不能用 video:template 收成模板：模板的构建和合成工具依赖 HyperFrames。可以直接在 video.json 写 template 声明后用 video:pack 打包。');
+    }
     const frame = source.manifest.frame;
     if (!frame || typeof frame.fps !== 'number' || !Number.isFinite(frame.fps) || frame.fps <= 0 || !Number.isInteger(frame.frames) || frame.frames <= 0) {
         throw appError('VIDEO_INVALID', '这个复刻工程没有有效的画幅和帧数，不能收成模板。');

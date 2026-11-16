@@ -17,10 +17,12 @@ import { readTemplateStyle, saveTemplateStyle } from './template-style.js';
 import { templateCaptionRows, mergeTemplateCaptionRows, validateEditedCaptionRows, captionRevision } from './template-captions.js';
 import { buildPromptScript, renderPromptScript, PROMPT_FORMATS } from './template-prompt.js';
 import { describeTemplateLineages, templateLineagePointer } from './template-lineage.js';
+import { FILM_ENGINE, filmInstalled, filmPackageJson, filmVideoManifest, isFilm, scaffoldFilmPackage } from './film/engine.js';
 
-// A code video package is a standalone HyperFrames project under
-// productions/<slug>/videos/<name>/. It pins its own dependencies and never
-// refers to files outside its directory; video-remake only drives it.
+// A code video package is a standalone project under productions/<slug>/videos/<name>/.
+// It pins the engine it declares — HyperFrames by default, film when created with
+// --engine film — and never refers to files outside its directory. video-remake only
+// drives it. A package without an engine field is a HyperFrames package.
 export const VIDEO_SCHEMA = 'video-package@1';
 const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-v(\d+)$/;
 // Installs, renders and HyperFrames caches; none of them are package source.
@@ -97,6 +99,10 @@ export function outputPath(pkg) {
 }
 
 async function packageCli(config, pkg) {
+    if (isFilm(pkg.manifest)) {
+        if (await filmInstalled(pkg.dir)) return null;
+        throw appError('VIDEO_NOT_INSTALLED', `film 包的运行时文件与登记的哈希不一致: ${rel(config, pkg.dir)}`);
+    }
     const cli = path.join(pkg.dir, 'node_modules', 'hyperframes', 'bin', 'hyperframes.mjs');
     try {
         await fs.access(cli);
@@ -182,7 +188,15 @@ npm run render      # 输出 ${output}
 `;
 }
 
-function agents() {
+function agents(engine = 'hyperframes') {
+    if (engine === 'film') return `# 代码视频包（film 引擎）
+
+本目录是独立的 film 工程。只修改本目录内的文件，不引用本目录以外的路径（不写 \`../\`，不写绝对路径）。
+
+- \`film.json\` 是冻结的节拍表。入口页面用 \`runtime/film.js\` 读取它，不要在页面里另写一套时长。
+- 页面设置 \`window.__film\`，\`frame(t)\` 只依赖 \`t\`。不要用 \`Date.now\`、\`requestAnimationFrame\` 当时钟，也不要用 \`Math.random\`。
+- 改完运行 \`npm run check\`，错误修完再渲染。渲染走本机 Chrome：\`npm run render\`。
+`;
     return `# 代码视频包
 
 本目录是独立的 HyperFrames 工程。只修改本目录内的文件，不引用本目录以外的路径（不写 \`../\`，不写绝对路径）。
@@ -210,7 +224,7 @@ async function nextName(videos, prefix) {
     return `${prefix}-v${Math.max(0, ...used) + 1}`;
 }
 
-export async function newVideo(config, { slug, name, width, height, fps, duration, skipInstall = false } = {}, deps = {}) {
+export async function newVideo(config, { slug, name, width, height, fps, duration, skipInstall = false, engine = 'hyperframes' } = {}, deps = {}) {
     const { production, dir } = await openProduction(config, slug);
     const videos = await listVideos(dir);
     const target = assertName(name ?? await nextName(videos, 'code'));
@@ -221,10 +235,19 @@ export async function newVideo(config, { slug, name, width, height, fps, duratio
     } catch (error) {
         if (error.code !== 'ENOENT') throw error;
     }
+    if (!['hyperframes', 'film'].includes(engine)) throw invalid(`未知的视频引擎: ${engine}。可选 hyperframes 或 film。`);
     const frame = parseFrameOptions({ width, height, fps, duration });
-    const rootPkg = await readJson(ROOT_PACKAGE);
     const output = `renders/${target}.mp4`;
-    const source = await sourceInfo(config, production);
+    const source = { ...(await sourceInfo(config, production)), forkedFrom: null };
+    const title = `${production.slug} ${target}`;
+    if (engine === 'film') {
+        const scaffold = await scaffoldFilmPackage(pkgDir, { name: `${production.slug}-${target}`.replace(/-v\d+$/, ''), title, frame, output, source });
+        const manifest = filmVideoManifest({ id: `${production.slug}-${target}`, version: videoVersion(target), title, frame, output, source });
+        manifest.runtime = scaffold.runtime;
+        await fs.writeFile(path.join(pkgDir, 'video.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+        return { command: 'video:new', slug: production.slug, video: target, engine: FILM_ENGINE, dir: rel(config, pkgDir), installed: null };
+    }
+    const rootPkg = await readJson(ROOT_PACKAGE);
     await fs.mkdir(path.join(pkgDir, 'assets'), { recursive: true });
     const html = await compositionHtml({ id: target, width: frame.width, height: frame.height, fps: frame.fps, frames: frame.frames, compositionDir: pkgDir });
     const files = {
@@ -235,22 +258,22 @@ export async function newVideo(config, { slug, name, width, height, fps, duratio
             dependencies: { hyperframes: rootPkg.dependencies.hyperframes },
         },
         'video.json': {
-            schema: VIDEO_SCHEMA, id: `${production.slug}-${target}`, version: videoVersion(target), title: `${production.slug} ${target}`,
+            schema: VIDEO_SCHEMA, id: `${production.slug}-${target}`, version: videoVersion(target), title,
             frame: { width: frame.width, height: frame.height, fps: frame.fps, frames: frame.frames },
             entry: 'index.html', output,
             commands: { install: 'npm ci', check: 'npm run check', render: 'npm run render' },
-            inputs: {}, source: { ...source, forkedFrom: null },
+            inputs: {}, source,
         },
     };
     for (const [file, value] of Object.entries(files)) await fs.writeFile(path.join(pkgDir, file), `${JSON.stringify(value, null, 2)}\n`);
     await fs.writeFile(path.join(pkgDir, 'index.html'), html);
-    await fs.writeFile(path.join(pkgDir, 'README.md'), readme({ name: target, title: files['video.json'].title, frame, output }));
+    await fs.writeFile(path.join(pkgDir, 'README.md'), readme({ name: target, title, frame, output }));
     await fs.writeFile(path.join(pkgDir, 'AGENTS.md'), agents());
     await fs.writeFile(path.join(pkgDir, 'CLAUDE.md'), '@AGENTS.md\n');
     await fs.writeFile(path.join(pkgDir, '.gitignore'), `${[...COPY_EXCLUDES].filter((n) => n !== '.DS_Store').map((n) => `${n}/`).join('\n')}\n`);
     const pkg = { name: target, dir: pkgDir, manifest: files['video.json'] };
     const installed = skipInstall ? null : await install(config, pkg, deps);
-    return { command: 'video:new', slug: production.slug, video: target, dir: rel(config, pkgDir), installed };
+    return { command: 'video:new', slug: production.slug, video: target, engine: 'hyperframes', dir: rel(config, pkgDir), installed };
 }
 
 async function copyTree(from, to) {
@@ -296,8 +319,10 @@ export async function forkVideo(config, { slug, from, name, skipInstall = false,
         };
         await fs.writeFile(path.join(pkgDir, 'video.json'), `${JSON.stringify(manifest, null, 2)}\n`);
         const pkg = { name: target, dir: pkgDir, manifest };
-        const installed = skipInstall ? null : await install(config, pkg, deps);
-        return { command: 'video:fork', slug: source.production.slug, from: source.name, video: target, dir: rel(config, pkgDir), output, installed, ...(lineage ? { lineage } : {}) };
+        // A film package has no npm dependencies; its runtime travels with the copy.
+        const film = isFilm(manifest);
+        const installed = skipInstall || film ? null : await install(config, pkg, deps);
+        return { command: 'video:fork', slug: source.production.slug, from: source.name, video: target, ...(film ? { engine: FILM_ENGINE } : {}), dir: rel(config, pkgDir), output, installed, ...(lineage ? { lineage } : {}) };
     } catch (error) {
         await fs.rm(pkgDir, { recursive: true, force: true });
         throw error;
@@ -305,6 +330,20 @@ export async function forkVideo(config, { slug, from, name, skipInstall = false,
 }
 export async function checkVideo(config, { slug, name } = {}, deps = {}) {
     const pkg = await resolveVideo(config, slug, name);
+    if (isFilm(pkg.manifest)) {
+        await packageCli(config, pkg);
+        const options = { timeoutMs: deps.timeoutMs ?? 600_000 };
+        // Same two steps as the package's own `npm run check`: source rules, then a
+        // real-browser sample that each frame renders the same alone and in sequence.
+        const statics = await runInPackage(config, pkg, process.execPath, ['tools/check.mjs'], { ...options, label: 'film 静态检查' }, deps);
+        const sampled = await runInPackage(config, pkg, process.execPath, ['tools/render.mjs', '--entry', pkg.manifest.entry || 'index.html', '--check'], { ...options, label: 'film 确定性检查' }, deps);
+        let determinism = null;
+        try { determinism = JSON.parse((sampled.stdout || '').trim().split('\n').at(-1)); } catch { /* reported as unknown */ }
+        return {
+            command: 'check', slug: pkg.production.slug, video: pkg.name, engine: FILM_ENGINE, fps: pkg.manifest.frame?.fps ?? null,
+            filmCheck: 'passed', determinism, output: (statics.stdout || '').trim(),
+        };
+    }
     const cli = deps.hyperframesCli ?? await packageCli(config, pkg);
     const entry = pkg.manifest.entry || 'index.html';
     insidePackage(pkg, entry, 'entry');
@@ -318,7 +357,8 @@ export async function checkVideo(config, { slug, name } = {}, deps = {}) {
 
 export async function renderVideo(config, { slug, name } = {}, deps = {}) {
     const pkg = await resolveVideo(config, slug, name);
-    if (!deps.hyperframesCli) await packageCli(config, pkg);
+    if (!isFilm(pkg.manifest) && !deps.hyperframesCli) await packageCli(config, pkg);
+    else if (isFilm(pkg.manifest)) await packageCli(config, pkg);
     const scripts = (await readJson(path.join(pkg.dir, 'package.json'))).scripts || {};
     if (!scripts.render) throw appError('VIDEO_INVALID', `videos/${pkg.name}/package.json 没有 render 脚本。`);
     const output = outputPath(pkg);
@@ -456,7 +496,8 @@ export async function listVideosCommand(config, { slug } = {}) {
             ...(pkg.lineage ? { lineage: pkg.lineage } : {}),
             forkedFrom: pkg.manifest.source?.forkedFrom?.video ?? null,
             template: pkg.manifest.template?.format === TEMPLATE_FORMAT,
-            installed: await exists(path.join(pkg.dir, 'node_modules', 'hyperframes')),
+            engine: pkg.manifest.engine || 'hyperframes',
+            installed: isFilm(pkg.manifest) ? await filmInstalled(pkg.dir) : await exists(path.join(pkg.dir, 'node_modules', 'hyperframes')),
             rendered: output ? await exists(output) : false,
             imported: Boolean(draft), frozen: Boolean(draft?.package?.treeHash),
         });
@@ -531,6 +572,9 @@ export async function packVideo(config, { slug, name, out, force = false } = {},
     for (const { relative, file } of files) {
         if (relative === 'video.json') continue;
         const data = await fs.readFile(file);
+        if (isFilm(pkg.manifest) && relative === 'package-lock.json' && /"node_modules\/hyperframes"/.test(data.toString('utf8'))) {
+            throw appError('VIDEO_INVALID', 'film 模板不使用 HyperFrames，package.json 和锁文件里不能有它。');
+        }
         if (TEXT_EXT.has(path.extname(relative).toLowerCase())) findings.push(...privateFindings(relative, data.toString('utf8')));
         const { mtime, mode } = await fs.stat(file);
         entries.push({ name: `${top}/${relative}`, data, mtime, mode });
@@ -650,12 +694,22 @@ async function inspectTemplate(buffer) {
     templatePath(manifest.output, 'output');
     const pkg = json('package.json');
     const lock = json('package-lock.json');
-    const expected = (await readJson(ROOT_PACKAGE)).dependencies.hyperframes;
-    if (pkg.dependencies?.hyperframes !== expected || lock.packages?.['node_modules/hyperframes']?.version !== expected
-        || lock.packages?.['']?.dependencies?.hyperframes !== expected || ![2, 3].includes(lock.lockfileVersion)) {
-        throw appError('VIDEO_INVALID', `模板及锁文件必须锁定本项目的 HyperFrames ${expected}。`);
+    const film = manifest.engine === FILM_ENGINE;
+    if (film) {
+        if (pkg.dependencies?.hyperframes || lock.packages?.['node_modules/hyperframes']) {
+            throw appError('VIDEO_INVALID', 'film 模板不使用 HyperFrames，package.json 和锁文件里不能有它。');
+        }
+        if (pkg.scripts?.render !== `node tools/render.mjs --out ${manifest.output}`) {
+            throw appError('VIDEO_INVALID', 'film 模板的 render 脚本必须调用 tools/render.mjs。');
+        }
+    } else {
+        const expected = (await readJson(ROOT_PACKAGE)).dependencies.hyperframes;
+        if (pkg.dependencies?.hyperframes !== expected || lock.packages?.['node_modules/hyperframes']?.version !== expected
+            || lock.packages?.['']?.dependencies?.hyperframes !== expected || ![2, 3].includes(lock.lockfileVersion)) {
+            throw appError('VIDEO_INVALID', `模板及锁文件必须锁定本项目的 HyperFrames ${expected}。`);
+        }
     }
-    for (const key of ['inputs', 'build', 'compose', 'render']) {
+    for (const key of film ? ['check', 'render'] : ['inputs', 'build', 'compose', 'render']) {
         if (typeof pkg.scripts?.[key] !== 'string' || !pkg.scripts[key].trim()) throw appError('VIDEO_INVALID', `模板 package.json 缺少 ${key} 脚本。`);
     }
     return { folder, manifest, files: [...contents.entries()] };
@@ -1216,6 +1270,11 @@ export async function runTemplateAction(config, { slug, name, action, at, title,
     if (!['prepare', 'check', 'preview', 'compose', 'fork', 'remix', 'export', 'generate', 'voice'].includes(action)) throw invalid('不支持的模板操作。');
     const pkg = await editorPackage(config, { slug, name });
     cancelled(deps.signal);
+    // Filling inputs, captions, voice, previews and compose run the template's
+    // inputs/build/compose scripts, which a film package does not have.
+    if (isFilm(pkg.manifest) && !['export', 'fork'].includes(action)) {
+        throw appError('VIDEO_INVALID', 'film 引擎的模板暂不支持在模板工作台填写素材和合成，只能打包或复制。');
+    }
     if (action === 'generate') {
         const { generateTemplate } = await import('./template-agent.js');
         return generateTemplate(config, { slug, name, title, prompt, subtitleScript, target, providerTarget, model, mode }, deps);

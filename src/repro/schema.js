@@ -79,7 +79,7 @@ function paths(value, where, options) {
 }
 
 export function validateSpec(raw) {
-    const spec = object(raw, 'spec', ['schema', 'title', 'objective', 'preserve', 'replace', 'inputs', 'acceptance', 'maxAttempts']);
+    const spec = object(raw, 'spec', ['schema', 'title', 'objective', 'preserve', 'replace', 'inputs', 'acceptance', 'maxAttempts', 'engine']);
     if (![SPEC_SCHEMA, 'video-remake.reproduction@1'].includes(spec.schema)) invalid('spec.schema', `expected ${SPEC_SCHEMA}`);
     const inputDefs = object(spec.inputs, 'spec.inputs');
     const inputs = Object.fromEntries(Object.entries(inputDefs).map(([name, rawInput]) => {
@@ -102,6 +102,7 @@ export function validateSpec(raw) {
     for (const key of ['timestampsSec', 'boundariesSec']) if (evidence[key] !== undefined) array(evidence[key], key, {max: 40}).forEach(t => number(t, key, {max: media.durationSec}));
     if (evidence.audioClipSec !== undefined) number(evidence.audioClipSec, 'audioClipSec', {exclusive: true, max: 30});
     if (/^(?:inputs|task|reference)\//.test(media.file)) invalid('media.file', 'output cannot overwrite input or task');
+    if (spec.engine !== undefined && !['hyperframes', 'film'].includes(spec.engine)) invalid('spec.engine', 'expected hyperframes or film');
     return {
         schema: SPEC_SCHEMA,
         title: string(spec.title, 'spec.title'),
@@ -122,6 +123,7 @@ export function validateSpec(raw) {
             requiredFiles: paths(acceptance.requiredFiles ?? [], 'spec.acceptance.requiredFiles'),
             review,
         },
+        ...(spec.engine ? { engine: spec.engine } : {}),
         maxAttempts: number(spec.maxAttempts ?? 2, 'spec.maxAttempts', { integer: true, min: 1, max: 5 }),
     };
 }

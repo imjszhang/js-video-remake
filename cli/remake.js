@@ -247,7 +247,7 @@ export async function execute(parsed, env = process.env, deps = {}) {
         }
         if (action === 'new') {
             return ok(await newVideo(config, {
-                slug, name: flags.as, width: flags.width, height: flags.height, fps: flags.fps, duration: flags.duration, skipInstall: flags.skipInstall,
+                slug, name: flags.as, engine: flags.engine, width: flags.width, height: flags.height, fps: flags.fps, duration: flags.duration, skipInstall: flags.skipInstall,
             }, deps));
         }
         if (action === 'fork') return ok(await forkVideo(config, { slug, from: flags.video, name: flags.as, skipInstall: flags.skipInstall }, deps));

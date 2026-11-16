@@ -167,7 +167,7 @@ Reproduction options:
   studio <slug>               Open HyperFrames Studio for a package [--video NAME] [--stop | --status]
   timeline <slug>             Print a package timeline [--video NAME] [--json]
   video:new <slug>            Create a standalone code video package videos/<name>-vN
-                              [--as NAME (default code-vN) --width N --height N --fps N --duration SEC --skip-install]
+                              [--as NAME (default code-vN) --engine hyperframes|film --width N --height N --fps N --duration SEC --skip-install]
   video:fork <slug>           Copy a package to the next version [--video FROM --as NAME --skip-install]
   video:list <slug>           List code video packages and their draft status
   video:render <slug>         Build (if defined) and render a package with its own HyperFrames [--video NAME]
